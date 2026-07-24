@@ -1,4 +1,4 @@
-# FPL Projektor
+# FPL Predictor
 
 En xG-baserad laguttagning för Fantasy Premier League som körs **helt i webbläsaren**. Ladda upp din data, få projektioner, ett optimerat lag och konkreta bytesförslag. Ingen server, ingen inloggning, ingen data lämnar din dator.
 
@@ -36,6 +36,7 @@ Resultatet är ett förslag på det bästa laget för din valda horisont — plu
 ### Funktioner
 
 - **Modellparametrar** — vrid på horisont (1–38 GW), regularisering, fixture-vikt och lägsta speltid och se laget uppdateras direkt.
+- **Kommande 5 matcher** — varje spelare visar nästa motståndare med namn och hemma/borta, följt av små färgade pluppar för de återstående fyra. Färgskalan följer FPL:s egen svårighetsgrad (FDR): mörkgrön = mycket lätt, grön = lätt, grå = lika, röd = svår, mörkröd = mycket svår. Håll pekaren över en plupp för motståndare och omgång. Till skillnad från den officiella appen, som bara visar tre omgångar, täcker den här fem.
 - **Lås spelare** (○ / ● i tabellen) — tvinga in en spelare, t.ex. Haaland, så byggs laget om runt honom. Kaptenen sätts automatiskt till lagets högst projicerade utespelare.
 - **Exportera** — ladda ner laget eller alla projektioner som CSV.
 - **Jämför mot mitt lag** — klistra in dina spelares namn och få en rättvis jämförelse (poäng per spelare) plus konkreta uppgraderingsförslag i samma prisklass.

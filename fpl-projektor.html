@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FPL Projektor — xG-baserad laguttagning</title>
+<title>FPL Predictor — xG-baserad laguttagning</title>
 <style>
   :root{
     --bg:#0b0f14; --panel:#121820; --panel2:#0e141b; --line:#1e2831;
@@ -101,8 +101,8 @@
       var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px 14px;
     display:flex;flex-direction:column;gap:16px}
   .line{display:flex;justify-content:center;gap:10px;flex-wrap:wrap}
-  .card{width:104px;background:var(--panel2);border:1px solid var(--line);
-    border-radius:9px;padding:9px 8px 8px;position:relative;transition:.15s}
+  .card{width:114px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:9px;padding:9px 8px 9px;position:relative;transition:.15s}
   .card:hover{border-color:var(--dimmer);transform:translateY(-2px)}
   .card .pos{position:absolute;top:7px;right:8px;font-family:var(--mono);font-size:9px;
     font-weight:700;letter-spacing:.04em}
@@ -111,9 +111,30 @@
   .card .nm{font-weight:600;font-size:13px;line-height:1.25;margin-top:11px;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .card .tm{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:2px}
-  .card .pj{font-family:var(--mono);font-size:15px;font-weight:700;margin-top:7px}
-  .card .cost{font-family:var(--mono);font-size:10px;color:var(--dim);
-    position:absolute;bottom:8px;right:8px}
+  .card .prow{display:flex;align-items:baseline;justify-content:space-between;margin-top:7px}
+  .card .pj{font-family:var(--mono);font-size:15px;font-weight:700}
+  .card .cost{font-family:var(--mono);font-size:10px;color:var(--dim)}
+  /* nästa motståndare som färgad bricka */
+  .nextfx{font-family:var(--mono);font-size:10px;font-weight:700;text-align:center;
+    padding:3px 0;border-radius:5px;margin-top:8px;letter-spacing:.02em}
+  /* pluppar för resterande matcher */
+  .fx{display:flex;gap:3px;justify-content:center;margin-top:5px}
+  .dot5{width:11px;height:5px;border-radius:2px;display:inline-block}
+  /* FDR-färgskala: 1 mycket lätt -> 5 mycket svår */
+  .f1{background:#0d6b3d;color:#c8f5dc}
+  .f2{background:#3ddc97;color:#052015}
+  .f3{background:#3a4653;color:#c3cdd7}
+  .f4{background:#e04a41;color:#2a0806}
+  .f5{background:#7a1216;color:#ffc9c9}
+  /* tabellvarianter */
+  .nextcell{font-family:var(--mono);font-size:11px;font-weight:600;padding:3px 7px;
+    border-radius:5px;display:inline-block;white-space:nowrap}
+  .fxstrip{display:inline-flex;gap:3px;align-items:center}
+  /* förklaring */
+  .legend{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:12px;
+    font-size:11px;color:var(--dim)}
+  .legend .item{display:flex;gap:6px;align-items:center}
+  .legend .swatch{width:16px;height:7px;border-radius:2px}
   .card .cbadge{position:absolute;top:-8px;left:-8px;background:var(--acc);color:#052015;
     font-family:var(--mono);font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px}
 
@@ -188,7 +209,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="brand"><b>FPL</b> Projektor
+    <div class="brand"><b>FPL</b> Predictor
       <span class="sub">xG-baserad laguttagning · körs helt i din webbläsare</span>
     </div>
     <div class="status" id="status"><span class="dot"></span>Väntar på data</div>
@@ -260,6 +281,15 @@
       <div class="stat"><div class="k">Spelare i modell</div><div class="v" id="s-n">–</div></div>
     </div>
     <div class="pitch" id="pitch"></div>
+    <div class="legend">
+      <span>Kommande 5 matcher:</span>
+      <span class="item"><span class="swatch f1"></span>mycket lätt</span>
+      <span class="item"><span class="swatch f2"></span>lätt</span>
+      <span class="item"><span class="swatch f3"></span>lika</span>
+      <span class="item"><span class="swatch f4"></span>svår</span>
+      <span class="item"><span class="swatch f5"></span>mycket svår</span>
+      <span style="color:var(--dimmer)">— håll pekaren över en plupp för motståndare &amp; omgång</span>
+    </div>
     <div class="exportbar">
       <button class="ghost" id="exp-squad">↓ Exportera lag (CSV)</button>
       <button class="ghost" id="exp-all">↓ Exportera alla projektioner (CSV)</button>
@@ -309,7 +339,8 @@
             <th data-s="pos">Pos</th>
             <th data-s="cost">Pris</th>
             <th data-s="pp90">pp90</th>
-            <th data-s="fdr">FDR</th>
+            <th data-s="nextfdr">Nästa</th>
+            <th data-s="fdr">Kommande 5</th>
             <th data-s="projH" class="sorted">Proj</th>
             <th data-s="valH">Value</th>
             <th data-s="lock">Lås</th>
@@ -498,7 +529,25 @@ function project(model){
     p.projH=+sum.toFixed(1);
     p.valH=+(sum/p.cost).toFixed(2);
     p.fdr=fdrs.length?+(fdrs.reduce((a,b)=>a+b,0)/fdrs.length).toFixed(1):3;
+    // de 5 kommande matcherna (alltid 5, oberoende av horisont)
+    p.next5=p.fixtures.slice().sort((a,b)=>a.gw-b.gw).slice(0,5).map(f=>({
+      gw:f.gw, opp:model.tShort[f.opp], home:f.home, fdr:f.fdr}));
+    p.nextfdr=p.next5.length?p.next5[0].fdr:3;
   });
+}
+
+/* Matcher som text för CSV-export, t.ex. "HUL(A,2), IPS(H,2)" */
+function fxText(next5,n){
+  if(!next5||!next5.length)return '';
+  return next5.slice(0,n).map(f=>`${f.opp}(${f.home?'H':'A'},${f.fdr})`).join(' ');
+}
+/* FDR -> färgklass. 1=mycket lätt (mörkgrön) … 5=mycket svår (mörkröd) */
+function fdrCls(f){return 'f'+Math.max(1,Math.min(5,Math.round(f)));}
+/* Rad med pluppar för matcherna. skip=antal att hoppa över (visas som text istället) */
+function fxDots(next5,skip){
+  return next5.slice(skip).map(f=>
+    `<span class="dot5 ${fdrCls(f.fdr)}" title="GW${f.gw}: ${f.opp} (${f.home?'H':'A'}) · FDR ${f.fdr}"></span>`
+  ).join('');
 }
 
 /* ============ Lagoptimering: greedy value + lokal förbättring ============ */
@@ -606,12 +655,15 @@ function renderSquad(){
     const line=document.createElement('div');line.className='line';
     squad.filter(p=>p.pos===pos).sort((a,b)=>b.projH-a.projH).forEach(p=>{
       const c=document.createElement('div');c.className='card c-'+pos;
+      const n1=p.next5&&p.next5[0];
       c.innerHTML=`${p===cap?'<span class="cbadge">C</span>':''}
         <span class="pos">${POSMAP[pos]}</span>
         <div class="nm">${p.name}</div>
         <div class="tm">${p.team_short}</div>
-        <div class="pj">${p.projH.toFixed(1)}</div>
-        <span class="cost">${p.cost.toFixed(1)}</span>`;
+        <div class="prow"><span class="pj">${p.projH.toFixed(1)}</span>
+          <span class="cost">${p.cost.toFixed(1)}</span></div>
+        ${n1?`<div class="nextfx ${fdrCls(n1.fdr)}" title="GW${n1.gw} · FDR ${n1.fdr}">${n1.opp} (${n1.home?'H':'A'})</div>`:''}
+        <div class="fx">${fxDots(p.next5||[],1)}</div>`;
       line.appendChild(c);
     });
     pitch.appendChild(line);
@@ -633,7 +685,7 @@ function renderTable(){
   rows.slice(0,300).forEach(p=>{
     const tr=document.createElement('tr');
     const inT=squadIds.has(p.id);
-    const fdrC='fdr'+Math.round(p.fdr);
+    const nx=p.next5&&p.next5[0];
     tr.innerHTML=`
       <td class="name ${inT?'inteam':''}">
         <span class="dot-pos p${p.pos}"></span>${p.name}${inT?'<span class="tag">i laget</span>':''}</td>
@@ -641,7 +693,8 @@ function renderTable(){
       <td class="mono">${POSMAP[p.pos]}</td>
       <td class="mono">${p.cost.toFixed(1)}</td>
       <td class="mono">${p.pp90.toFixed(2)}</td>
-      <td><span class="fdr ${fdrC}">${p.fdr}</span></td>
+      <td>${nx?`<span class="nextcell ${fdrCls(nx.fdr)}" title="GW${nx.gw} · FDR ${nx.fdr}">${nx.opp} (${nx.home?'H':'A'})</span>`:'–'}</td>
+      <td><span class="fxstrip" title="Snitt-FDR ${p.fdr}">${fxDots(p.next5||[],0)}</span></td>
       <td class="mono"><b>${p.projH.toFixed(1)}</b></td>
       <td class="mono">${p.valH.toFixed(2)}</td>
       <td><span class="lockbtn ${LOCKED.has(p.id)?'on':''}" data-id="${p.id}">${LOCKED.has(p.id)?'●':'○'}</span></td>`;
@@ -664,11 +717,13 @@ function exportSquad(){
   if(!MODEL)return;
   const cap=[...MODEL.squad].filter(p=>p.pos!==1).sort((a,b)=>b.projH-a.projH)[0];
   const H=document.getElementById('c-h').value;
-  const rows=[['Position','Spelare','Lag','Pris','pp90','FDR','ProjektionGW1-'+H,'Value','Kapten']];
+  const rows=[['Position','Spelare','Lag','Pris','pp90','FDR','ProjektionGW1-'+H,'Value','Kapten',
+    'Nästa','Kommande5']];
   [1,2,3,4].forEach(pos=>{
     MODEL.squad.filter(p=>p.pos===pos).sort((a,b)=>b.projH-a.projH).forEach(p=>{
       rows.push([POSMAP[pos],p.name,p.team_short,p.cost.toFixed(1),p.pp90.toFixed(2),
-        p.fdr,p.projH.toFixed(1),p.valH.toFixed(2),p===cap?'C':'']);
+        p.fdr,p.projH.toFixed(1),p.valH.toFixed(2),p===cap?'C':'',
+        fxText(p.next5,1),fxText(p.next5,5)]);
     });
   });
   const cost=MODEL.squad.reduce((s,p)=>s+p.cost,0);
@@ -679,10 +734,12 @@ function exportSquad(){
 function exportAll(){
   if(!MODEL)return;
   const H=document.getElementById('c-h').value;
-  const rows=[['Spelare','Lag','Position','Pris','pp90','FDR','ProjGW1-'+H,'Value','ILaget']];
+  const rows=[['Spelare','Lag','Position','Pris','pp90','FDR','ProjGW1-'+H,'Value','ILaget',
+    'Nästa','Kommande5']];
   MODEL.model.players.slice().sort((a,b)=>b.projH-a.projH).forEach(p=>{
     rows.push([p.name,p.team_short,POSMAP[p.pos],p.cost.toFixed(1),p.pp90.toFixed(2),
-      p.fdr,p.projH.toFixed(1),p.valH.toFixed(2),squadIds.has(p.id)?'ja':'']);
+      p.fdr,p.projH.toFixed(1),p.valH.toFixed(2),squadIds.has(p.id)?'ja':'',
+      fxText(p.next5,1),fxText(p.next5,5)]);
   });
   downloadCSV('fpl-projektioner.csv',rows);
 }
