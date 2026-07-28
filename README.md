@@ -38,6 +38,31 @@ Spelare kopplas mellan säsongerna via `player_code`, som är stabil över tid. 
 
 Bonus och DefCon kan slås av och på i appen om du vill se hur mycket de påverkar.
 
+## Gränssnittet
+
+Fyra åtskilda vyer, så det alltid är tydligt vad du planerar:
+
+| Vy | Innehåll |
+|----|----------|
+| **Optimerat lag** | Startelva per lagdel, bänk, poänguppdelning, pris-mot-poäng, fixtur-värmekarta |
+| **Alla spelare** | Sökbar och sorterbar lista (poäng / värde / fixtur), lås spelare |
+| **Bytesplan** | UT→IN-kort med motiv, plus plan per omgång |
+| **Chip-plan** | Bästa omgång per chip och halva |
+
+På dator ligger navigeringen i en vänstermeny och spelardetaljer i en högerpanel. På mobil blir
+navigeringen en tab-bar i botten och detaljerna ett bottenblad. Samma fil, ingen separat mobilversion.
+
+Klicka på en spelare — på planen, bänken eller i listan — för att se projektion, kommande fem
+motstånd, var poängen kommer ifrån och nyckeltal, samt låsa spelaren i laget.
+
+### Ingen simulerad osäkerhet
+
+Gränssnittet visar medvetet **inga konfidensintervall eller sannolikheter**. Modellen ger
+punktskattningar, och att rita fördelningskurvor kring dem skulle antyda en precision som inte
+finns. Där en sådan panel annars hade legat visas istället **uppdelningen av var poängen kommer
+ifrån** — grundpoäng, mål, assist, bonus, hållen nolla, DefCon och insläppta mål. Det är
+modellens faktiska delar, inte en skattning av spridning.
+
 ## Funktioner
 
 - **Modellparametrar** — vrid på horisont (1–38 GW), regularisering, fixture-vikt och lägsta speltid och se laget uppdateras direkt.
@@ -85,6 +110,23 @@ Tre saker att känna till:
   använd `--picks-file mitt_lag.json`.
 - **Spelare utan Premier League-historik utesluts** ur modellen, och den tomma platsen
   räknas då som ett byte i planen. Kör med `--minmin 0` för att få med dem.
+
+### Hämta ditt eget lag i appen
+
+Kortet **MITT FPL-LAG** överst i appen tar ditt lag-ID och används sedan av Bytesplan,
+Chip-plan och Jämför. Ingen inloggning — endpointen är publik.
+
+Ditt ID hittar du på fantasy.premierleague.com under *Pick Team* → *View Gameweek history*;
+siffran står i URL:en.
+
+**Om direkthämtningen blockeras** visar appen automatiskt en manuell väg: två länkar att öppna
+i en ny flik och en ruta att klistra in JSON-svaret i. Samma resultat, tar tio sekunder.
+Anledningen är FPL:s CORS-policy, som avgör om en webbsida får läsa deras API — vi har inte
+kunnat verifiera den, så appen försöker och faller tillbaka.
+
+När laget är inläst fylls banken i automatiskt, spelarnamnen skrivs in i textrutorna så du ser
+vad som hämtats, och spelare som saknas i modellen flaggas. Matchningen sker på FPL:s element-ID,
+inte på namn, så det kan inte bli förväxlingar.
 
 ### Varför ingen inloggning
 
