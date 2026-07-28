@@ -46,6 +46,8 @@ Bonus och DefCon kan slås av och på i appen om du vill se hur mycket de påver
 - **Straffläggarflagga** — spelare markerade **P** är sitt lags utsedda straffläggare den här säsongen.
 - **Exportera** — ladda ner laget eller alla projektioner som CSV.
 - **Jämför mot mitt lag** — klistra in dina spelares namn och få en rättvis jämförelse (poäng per spelare) plus konkreta uppgraderingsförslag i samma prisklass.
+- **Tre tydligt åtskilda flikar** — *Lag & spelare*, *Bytesplan* och *Chip-plan*, så det alltid är klart vad du planerar.
+- **Chip-plan** — bästa omgång för Bench Boost, Triple Captain, Free Hit och Wildcard, per halva av säsongen.
 - **Bytesplan** — planerar byten över 3, 5 eller 8 omgångar framåt: vilka byten, vilken omgång, när det lönar sig att spara fria byten och när ett −4 är värt det. Utgår från antingen det optimala laget eller ditt eget.
 
 ## Bytesplanen
@@ -57,10 +59,40 @@ Bytesplanering är ett flerperiodsproblem: ett byte i GW2 påverkar vad som är 
 **I Python** (`fpl_plan.py`) löses hela sekvensen exakt med MILP. Den bestämmer trupp, startelva och kapten för varje omgång samtidigt, med bivillkor för fria byten (max 5 sparade), −4-avdrag, budget och max tre per klubb.
 
 ```bash
-python3 python/fpl_plan.py                             # från optimalt lag
-python3 python/fpl_plan.py --squad "Haaland,Saka,..."  # från ditt lag
+python3 python/fpl_plan.py                              # från optimalt lag
+python3 python/fpl_plan.py --team-id 1234567            # hämtar DITT lag från FPL
+python3 python/fpl_plan.py --squad "Haaland,Saka,..."   # klistra in manuellt
 python3 python/fpl_plan.py --horizon 5 --ft 2 --bank 1.5
 ```
+
+### Hämta ditt eget lag
+
+`--team-id` läser ditt lag direkt från FPL:s publika API. **Ingen inloggning behövs och
+appen frågar aldrig efter ditt lösenord.** Endpointen `entry/{id}/event/{gw}/picks/` är
+öppen; det enda som krävs är ditt lag-ID.
+
+Ditt ID hittar du genom att logga in på fantasy.premierleague.com, gå till *Pick Team* →
+*View Gameweek history* och läsa av numret i URL:en.
+
+Bank hämtas automatiskt från FPL om du inte anger `--bank` själv.
+
+Tre saker att känna till:
+
+- **Före säsongsstart finns ingenting att hämta.** FPL gör picks publika först efter att
+  en gameweek-deadline passerat. Fram till dess får du använda `--squad`.
+- **FPL kan blockera vissa nätverk** (servrar och VPN får ofta HTTP 403). Spara då
+  `https://fantasy.premierleague.com/api/entry/<ID>/event/<GW>/picks/` till en fil och
+  använd `--picks-file mitt_lag.json`.
+- **Spelare utan Premier League-historik utesluts** ur modellen, och den tomma platsen
+  räknas då som ett byte i planen. Kör med `--minmin 0` för att få med dem.
+
+### Varför ingen inloggning
+
+Det vore tekniskt möjligt att logga in och läsa `my-team`-endpointen, som visar byten du
+gjort men inte låst än. Det gör vi medvetet inte: en statisk sida kan inte hantera
+lösenord säkert, det kräver serversidig sessionshantering, och nyttan är marginell
+jämfört med risken. Lag-ID ger nästan samma information utan att några uppgifter lämnar
+din dator.
 
 Körtid är några sekunder. `--candidates` styr poolens storlek — högre ger bättre lösning men tar längre tid (110 är standard, 220 tar ~7 sekunder).
 
@@ -72,6 +104,51 @@ Körtid är några sekunder. `--candidates` styr poolens storlek — högre ger 
 - **Bänkpoäng.** Bänken antas ge noll.
 
 En observation värd att ta med: utgår du från ett lag som redan använder hela budgeten finns det ofta *ingen* spelare som är både bättre och billigare, och då hittar planen få eller inga byten. Det är ett riktigt svar, inte ett fel — spara de fria bytena till skador och formförändringar istället.
+
+## Chip-planen
+
+FPL:s chips förnyas vid halvtid — du får ett av varje per halva, alltså åtta totalt. Fönstren
+kommer från FPL:s egna regler:
+
+| Chip | Första halvan | Andra halvan |
+|---|---|---|
+| Bench Boost | GW1–19 | GW20–38 |
+| Triple Captain | GW1–19 | GW20–38 |
+| Free Hit | GW2–19 | GW20–38 |
+| Wildcard | GW2–19 | GW20–38 |
+
+Wildcard och Free Hit går inte att spela i GW1; Bench Boost och Triple Captain gör det.
+
+### Så värderas de
+
+- **Triple Captain** — vad kaptenen ger en gång till, i den omgången.
+- **Bench Boost** — summan av de fyra bänkspelarnas projektion.
+- **Free Hit** — bästa möjliga elva minus din egen elva den omgången.
+- **Wildcard** — nyoptimerad trupp för resten av fönstret minus din nuvarande trupp.
+
+Wildcard och Free Hit räknas mot ditt **lagvärde**, inte mot 100m — ett wildcard ger dig det
+laget är värt att handla för.
+
+```bash
+python3 python/fpl_chips.py                     # från optimalt lag
+python3 python/fpl_chips.py --team-id 1234567   # från ditt lag
+python3 python/fpl_chips.py --wc-stride 1       # utvärdera Wildcard varje omgång (långsamt)
+```
+
+### Den viktigaste begränsningen
+
+**Dubbel- och blankomgångar avgör chip-timing i praktiken, men de finns inte i schemat än.**
+De uppstår när cupmatcher tvingar fram ommatchningar under säsongen. Så länge schemat är
+orört (760 lag-omgångar med exakt en match var) bygger rangordningen bara på motståndsstyrka,
+och skillnaderna blir små — Triple Captain landar på ungefär samma värde i halva omgångarna.
+
+Både appen och scriptet varnar när det ser ut så. Kör om analysen från oktober–november när
+omgångarna börjar spricka; då blir siffrorna verkligt användbara. Bench Boost är värt ungefär
+dubbelt i en dubbelomgång, och Free Hit får nästan hela sitt värde från blanka omgångar.
+
+**Wildcard är det minst tillförlitliga av de fyra måtten.** Det jämför en nyoptimerad trupp mot
+din nuvarande, men räknar inte in att du ändå skulle göra vanliga byten under perioden. Läs det
+som "hur långt från optimalt ligger mitt lag" snarare än som en exakt poängvinst.
 
 ## Om svårighetsgraden
 
@@ -141,7 +218,8 @@ Webb-appen och Python-scriptet ger identiska projektioner; skillnaden ligger bar
 |-----|-------------|
 | `fpl-projektor.html` | Hela webb-appen — en enda fil, inga beroenden |
 | `python/fpl_optimize.py` | Exakt LP-optimering, hämtar data själv |
-| `python/fpl_plan.py` | Bytesplanering över flera omgångar (MILP) |
+| `python/fpl_plan.py` | Bytesplanering över flera omgångar (MILP), hämtar ditt lag via lag-ID |
+| `python/fpl_chips.py` | Chip-planering: bästa omgång per chip och halva |
 | `python/evaluate.py` | Utvärdering mot verkligt utfall |
 | `python/ANVANDNING_utvardering.md` | Så använder du utvärderingsloopen |
 
