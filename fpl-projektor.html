@@ -71,6 +71,23 @@
     background:var(--panel);transition:.15s}
   .sources a:hover{border-color:var(--acc);background:#0f1c17}
   .sources .srchint{color:var(--dimmer);font-size:11px}
+  .source-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:18px 20px}
+  .src-head{display:flex;align-items:center;justify-content:space-between;gap:16px;
+    flex-wrap:wrap}
+  .src-title{font-family:var(--mono);font-weight:700;font-size:15px}
+  .src-sub{font-size:12px;color:var(--dim);margin-top:3px}
+  .src-steps{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+  .step{font-family:var(--mono);font-size:11px;color:var(--dimmer);
+    border:1px solid var(--line);border-radius:20px;padding:5px 12px;
+    display:flex;align-items:center;gap:7px;transition:.2s}
+  .step::before{content:"○";font-size:10px}
+  .step.load{color:var(--warn);border-color:#3d3320}
+  .step.load::before{content:"◐"}
+  .step.done{color:var(--acc);border-color:#1d3a2b;background:#0d1a14}
+  .step.done::before{content:"●"}
+  .step.fail{color:var(--bad);border-color:#3d2020}
+  .step.fail::before{content:"✕"}
 
   /* controls */
   .ctrls{display:flex;gap:20px;flex-wrap:wrap;align-items:center;
@@ -84,6 +101,9 @@
   .ctrl .val{font-family:var(--mono);font-size:13px;color:var(--acc);min-width:44px}
   select{background:var(--panel2);color:var(--ink);border:1px solid var(--line);
     border-radius:6px;padding:7px 10px;font-family:var(--mono);font-size:12px}
+  label.chk{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:12px;
+    color:var(--ink);cursor:pointer;text-transform:none;letter-spacing:0}
+  label.chk input{accent-color:var(--acc);cursor:pointer}
 
   /* stat strip */
   .strip{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:6px 0 8px}
@@ -176,6 +196,7 @@
   .lockbtn.on{color:var(--acc)}
   .tag{font-family:var(--mono);font-size:9px;padding:1px 5px;border-radius:4px;
     background:var(--line);color:var(--dim);margin-left:6px}
+  .tag.pen{background:#2b2438;color:#c8a2ff}
 
   .empty-state{text-align:center;padding:70px 20px;color:var(--dim)}
   .empty-state .big{font-family:var(--mono);font-size:15px;color:var(--dimmer);
@@ -215,37 +236,28 @@
     <div class="status" id="status"><span class="dot"></span>Väntar på data</div>
   </header>
 
-  <h2>Ladda data</h2>
-  <div class="loaders">
-    <label class="drop" id="d-stats">
-      <span class="chk">✓</span>
-      <span class="lbl">Spelarstatistik (CSV)</span>
-      <div class="fn empty" id="fn-stats">fpl-data-stats.csv · dra hit eller klicka</div>
-      <input type="file" id="f-stats" accept=".csv">
-    </label>
-    <label class="drop" id="d-boot">
-      <span class="chk">✓</span>
-      <span class="lbl">Bootstrap (JSON)</span>
-      <div class="fn empty" id="fn-boot">priser & lag</div>
-      <input type="file" id="f-boot" accept=".json">
-    </label>
-    <label class="drop" id="d-fix">
-      <span class="chk">✓</span>
-      <span class="lbl">Fixtures (JSON)</span>
-      <div class="fn empty" id="fn-fix">schema</div>
-      <input type="file" id="f-fix" accept=".json">
-    </label>
+  <h2>Data</h2>
+  <div class="source-card">
+    <div class="src-head">
+      <div>
+        <div class="src-title">FPL Core Insights</div>
+        <div class="src-sub">Hämtas direkt från GitHub · uppdateras 07:30 och 17:30 UTC</div>
+      </div>
+      <button class="run" id="run">Hämta &amp; kör</button>
+    </div>
+    <div class="src-steps" id="steps">
+      <div class="step" data-k="teams">lag &amp; Elo</div>
+      <div class="step" data-k="players">spelare 26/27</div>
+      <div class="step" data-k="prices">priser &amp; straffläggare</div>
+      <div class="step" data-k="hist">säsong 25/26</div>
+      <div class="step" data-k="fix">spelschema (38 omgångar)</div>
+    </div>
+    <div class="hint" style="margin-top:12px">
+      Inget laddas upp — appen hämtar publika CSV-filer och räknar allt lokalt i din webbläsare.
+      <a href="https://github.com/olbauday/FPL-Core-Insights" target="_blank" rel="noopener">Datakälla</a>
+    </div>
   </div>
-  <div class="runbar">
-    <button class="run" id="run" disabled>Kör projektion</button>
-    <span class="hint" id="hint">Alla tre filerna behövs. Inget lämnar din dator.</span>
-  </div>
-  <div class="sources">
-    Hämta färska JSON-underlag direkt:
-    <a href="https://fantasy.premierleague.com/api/bootstrap-static/" target="_blank" rel="noopener">↓ bootstrap (priser &amp; lag)</a>
-    <a href="https://fantasy.premierleague.com/api/fixtures/" target="_blank" rel="noopener">↓ fixtures (schema)</a>
-    <span class="srchint">— högerklicka → "Spara som…" om filen öppnas i webbläsaren</span>
-  </div>
+  <div class="err hidden" id="err"></div>
   <div class="err hidden" id="err"></div>
 
   <div id="results" class="hidden">
@@ -271,6 +283,13 @@
         <div class="row"><input type="range" id="c-m" min="0" max="2500" step="100" value="900">
           <span class="val" id="v-m">900</span></div>
       </div>
+      <div class="ctrl">
+        <label>Poängkomponenter</label>
+        <div class="row" style="gap:14px">
+          <label class="chk"><input type="checkbox" id="c-dc" checked> DefCon</label>
+          <label class="chk"><input type="checkbox" id="c-bon" checked> bonus</label>
+        </div>
+      </div>
     </div>
 
     <h2>Optimerat lag <span id="capline" style="font-family:var(--sans);text-transform:none;letter-spacing:0;color:var(--dim);font-size:12px;font-weight:400"></span></h2>
@@ -282,7 +301,7 @@
     </div>
     <div class="pitch" id="pitch"></div>
     <div class="legend">
-      <span>Kommande 5 matcher:</span>
+      <span>Kommande 5 matcher (Elo-baserad svårighet):</span>
       <span class="item"><span class="swatch f1"></span>mycket lätt</span>
       <span class="item"><span class="swatch f2"></span>lätt</span>
       <span class="item"><span class="swatch f3"></span>lika</span>
@@ -352,17 +371,18 @@
   </div>
 
   <div id="welcome" class="empty-state">
-    <div class="big">Ladda upp dina tre filer för att börja.</div>
-    <div>Modellen räknar underliggande xG per 90 minuter, krymper små stickprov mot
-      positionssnittet, viktar mot kommande motstånd och sätter ihop det bästa lagets
-      inom 100.0m och FPL:s regler.</div>
+    <div class="big">Tryck "Hämta &amp; kör" för att börja.</div>
+    <div>Appen hämtar färsk data från FPL Core Insights, räknar underliggande xG, bonus och
+      defensiva bidrag per 90 minuter, krymper små stickprov mot positionssnittet, viktar mot
+      kommande motstånd via Elo och sätter ihop det bästa laget inom 100.0m och FPL:s regler.</div>
   </div>
 
   <footer id="foot" class="hidden">
-    Modellen bygger på föregående säsongs underliggande siffror (npxG, xA, xGC, xCS) —
-    den ser inte nyförvärv utan historik, straffläggare eller formförändringar.<br>
+    Modellen bygger på föregående säsongs underliggande siffror (xG, xA, xGC, bonus, defensiva
+    bidrag) och viktar kommande matcher med ClubElo-ratings. Den ser inte nyförvärv utan
+    Premier League-historik, och straffar ingår implicit i förra säsongens xG — byten av
+    straffläggarroll fångas alltså inte (utsedd läggare visas med <span class="tag pen">P</span>).<br>
     Enskilda gameweeks har stor slumpvarians; projektionen är ett snitt, inte en spådom.
-    Justera parametrarna ovan och läs av hur laget ändras.
   </footer>
 </div>
 
@@ -392,125 +412,171 @@ function norm(s){return (s||'').toString().normalize('NFKD')
   .replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();}
 
 /* ============ Datahållare ============ */
-const FILES={stats:null,boot:null,fix:null};
-let MODEL=null;   // beräknad projektion
+const DATA={teams:null,players:null,prices:null,hist:null,fix:null};
+let MODEL=null;
 const POSMAP={1:'GK',2:'DEF',3:'MID',4:'FWD'};
+const POSNUM={'Goalkeeper':1,'Defender':2,'Midfielder':3,'Forward':4};
 
-/* ============ Filuppladdning ============ */
-function wire(id,key,parse){
-  const drop=document.getElementById('d-'+key.replace('stats','stats'));
-  const input=document.getElementById('f-'+key);
-  const fn=document.getElementById('fn-'+key);
-  const zone=document.getElementById('d-'+key);
-  input.addEventListener('change',e=>handle(e.target.files[0]));
-  ['dragover','dragenter'].forEach(ev=>zone.addEventListener(ev,e=>{
-    e.preventDefault();zone.classList.add('on');}));
-  ['dragleave','drop'].forEach(ev=>zone.addEventListener(ev,e=>{
-    e.preventDefault();zone.classList.remove('on');}));
-  zone.addEventListener('drop',e=>{if(e.dataTransfer.files[0])handle(e.dataTransfer.files[0]);});
-  function handle(file){
-    if(!file)return;
-    const rd=new FileReader();
-    rd.onload=()=>{
-      try{ FILES[key]=parse(rd.result);
-        fn.textContent=file.name; fn.classList.remove('empty');
-        zone.classList.add('filled'); checkReady();
-      }catch(err){ showErr('Kunde inte läsa '+file.name+': '+err.message); }
-    };
-    rd.readAsText(file);
-  }
-}
-wire('f-stats','stats',parseCSV);
-wire('f-boot','boot',t=>JSON.parse(t));
-wire('f-fix','fix',t=>JSON.parse(t));
+/* ============ Hämtning från FPL Core Insights (GitHub) ============ */
+const GH='https://raw.githubusercontent.com/olbauday/FPL-Core-Insights/main/data';
+const S_NOW='2026-2027', S_PREV='2025-2026', PREV_LAST_GW=38, N_GW=38;
 
-function checkReady(){
-  const ok=FILES.stats&&FILES.boot&&FILES.fix;
-  document.getElementById('run').disabled=!ok;
-  const st=document.getElementById('status');
-  if(ok){st.classList.add('ready');st.innerHTML='<span class="dot"></span>Redo att köra';}
+function mark(k,cls){const e=document.querySelector(`.step[data-k="${k}"]`);
+  if(e)e.className='step '+cls;}
+
+async function getCSV(url){
+  const r=await fetch(url);
+  if(!r.ok)throw new Error(r.status+' '+url.split('/').pop());
+  return parseCSV(await r.text());
 }
+
+async function fetchAll(){
+  ['teams','players','prices','hist','fix'].forEach(k=>mark(k,'load'));
+  const step=async(k,p)=>{try{const v=await p;mark(k,'done');return v;}
+    catch(e){mark(k,'fail');throw e;}};
+
+  const [teams,players,prices,histPlayers,hist]=await Promise.all([
+    step('teams',   getCSV(`${GH}/${S_NOW}/teams.csv`)),
+    step('players', getCSV(`${GH}/${S_NOW}/players.csv`)),
+    step('prices',  getCSV(`${GH}/${S_NOW}/playerstats.csv`)),
+    getCSV(`${GH}/${S_PREV}/players.csv`),
+    step('hist',    getCSV(`${GH}/${S_PREV}/By%20Gameweek/GW${PREV_LAST_GW}/playerstats.csv`)),
+  ]);
+
+  // Spelschemat ligger en fil per omgång — hämta alla parallellt
+  const fixParts=await step('fix', Promise.all(
+    Array.from({length:N_GW},(_,i)=>
+      getCSV(`${GH}/${S_NOW}/By%20Gameweek/GW${i+1}/fixtures.csv`).catch(()=>[]))));
+  const fix=[].concat(...fixParts);
+
+  DATA.teams=teams; DATA.players=players; DATA.prices=prices;
+  DATA.histPlayers=histPlayers; DATA.hist=hist; DATA.fix=fix;
+  return DATA;
+}
+
 function showErr(m){const e=document.getElementById('err');e.textContent=m;e.classList.remove('hidden');}
 function clearErr(){document.getElementById('err').classList.add('hidden');}
 
+/* Elo -> förväntad poängandel (0-1). Hemmaplansfördel ~60 Elo. */
+function eloExp(eloFor,eloAgainst,home){
+  const HA=60, f=eloFor+(home?HA:0), a=eloAgainst+(home?0:HA);
+  return 1/(1+Math.pow(10,(a-f)/400));
+}
+/* Förväntad poängandel -> 1-5-skala (1 = mycket lätt motstånd) */
+function expToFdr(E){
+  if(E>=0.70)return 1; if(E>=0.575)return 2;
+  if(E>=0.425)return 3; if(E>=0.30)return 4; return 5;
+}
+/* Poisson: P(X >= k) för medelvärde lam */
+function poisAtLeast(k,lam){
+  if(lam<=0)return 0;
+  let term=Math.exp(-lam), cdf=term;
+  for(let i=1;i<k;i++){term*=lam/i; cdf+=term;}
+  return Math.max(0,Math.min(1,1-cdf));
+}
+
 /* ============ Modellen (port av Python-logiken) ============ */
 function buildModel(){
-  const stats=FILES.stats, boot=FILES.boot, fix=FILES.fix;
   const K=+document.getElementById('c-k').value;
   const minMin=+document.getElementById('c-m').value;
+  const USE_DC=document.getElementById('c-dc').checked;
+  const USE_BON=document.getElementById('c-bon').checked;
 
-  // lagnamn
-  const tShort={},tFull={};
-  boot.teams.forEach(t=>{tShort[t.id]=t.short_name;tFull[t.id]=t.name;});
+  // --- Lag (nyckel = FPL:s team code, vilket är det fixtures-filerna använder) ---
+  const tShort={},tFull={},tElo={};
+  DATA.teams.forEach(t=>{const c=+t.code;
+    tShort[c]=t.short_name; tFull[c]=t.name; tElo[c]=+t.elo||1500;});
 
-  // aggregera historik per (namn,lag,pos)
-  const agg={};
-  stats.forEach(r=>{
-    const et=+r.element_type;
-    const key=norm(r.web_name)+'|'+norm(r.team_name)+'|'+et;
-    if(!agg[key])agg[key]={web_name:r.web_name,team_name:r.team_name,et,
-      minutes:0,npxg:0,xa:0,xgc:0,xcs:0,matches:0};
-    const a=agg[key];
-    a.minutes+=+r.minutes||0;
-    a.npxg+=+r.non_penalty_expected_goals||0;
-    a.xa+=+r.expected_assists||0;
-    a.xgc+=+r.expected_goals_conceded||0;
-    a.xcs+=+r.expected_clean_sheet||0;
-    a.matches+=1;
-  });
-  const rowsH=Object.values(agg).filter(a=>a.minutes>0);
-
-  // positionssnitt (per 90 + xcs per match)
-  const psum={};
-  [1,2,3,4].forEach(p=>psum[p]={npxg:0,xa:0,xgc:0,p90:0,xcs:0,m:0});
-  rowsH.forEach(a=>{const p90=a.minutes/90;const s=psum[a.et];
-    s.npxg+=a.npxg;s.xa+=a.xa;s.xgc+=a.xgc;s.p90+=p90;s.xcs+=a.xcs;s.m+=a.matches;});
-  const pmean={};
-  [1,2,3,4].forEach(p=>{const s=psum[p];pmean[p]={
-    npxg:s.p90?s.npxg/s.p90:0, xa:s.p90?s.xa/s.p90:0,
-    xgc:s.p90?s.xgc/s.p90:0, xcs:s.m?s.xcs/s.m:0.26};});
-
-  // pp90 per historik-spelare (regulariserad)
-  const goalPts={1:10,2:6,3:5,4:4}, csPts={1:4,2:4,3:1,4:0};
-  function shrink(val,n,prior){return (val*n+prior*K)/(n+K);}
-  const histByKey={}, histByNP={};
-  rowsH.forEach(a=>{
-    const p90=a.minutes/90, et=a.et;
-    const npxg90=shrink(a.npxg/p90,p90,pmean[et].npxg);
-    const xa90  =shrink(a.xa/p90,  p90,pmean[et].xa);
-    const xgc90 =shrink(a.xgc/p90, p90,pmean[et].xgc);
-    const xcs   =shrink(a.xcs/a.matches,a.matches,pmean[et].xcs);
-    let pp=2 + npxg90*goalPts[et] + xa90*3;
-    if(et==1||et==2){pp+=xcs*csPts[et]; pp-=(xgc90/2);}
-    else if(et==3){pp+=xcs*csPts[et];}
-    const rec={pp90:pp,minutes:a.minutes,npxg90,et};
-    histByKey[norm(a.web_name)+'|'+norm(a.team_name)+'|'+et]=rec;
-    const npk=norm(a.web_name)+'|'+et;
-    if(!histByNP[npk]||histByNP[npk].minutes<a.minutes)histByNP[npk]=rec;
+  // --- Förra säsongen: player_code -> säsongstotaler (stabil koppling, ingen namnmatchning) ---
+  const prevIdToCode={};
+  DATA.histPlayers.forEach(p=>{prevIdToCode[+p.player_id]=+p.player_code;});
+  const histByCode={};
+  DATA.hist.forEach(r=>{
+    const code=prevIdToCode[+r.id]; if(!code)return;
+    histByCode[code]={
+      minutes:+r.minutes||0, starts:+r.starts||0,
+      xg:+r.expected_goals||0, npxg:(+r.expected_goals||0)-0, // npxG saknas -> straffar hanteras via penalties_order
+      xa:+r.expected_assists||0, xgc:+r.expected_goals_conceded||0,
+      cs:+r.clean_sheets||0, bonus:+r.bonus||0,
+      dc:+r.defensive_contribution||0, pts:+r.total_points||0,
+    };
   });
 
-  // fixtures per lag per gw
-  const teamFix={};
-  fix.forEach(f=>{
-    if(f.event==null)return;
-    (teamFix[f.team_h]=teamFix[f.team_h]||[]).push({gw:f.event,opp:f.team_a,home:true,fdr:f.team_h_difficulty});
-    (teamFix[f.team_a]=teamFix[f.team_a]||[]).push({gw:f.event,opp:f.team_h,home:false,fdr:f.team_a_difficulty});
+  // --- Årets spelare: id -> namn/lag/position ---
+  const meta={};
+  DATA.players.forEach(p=>{
+    meta[+p.player_id]={name:p.web_name, code:+p.player_code,
+      team:+p.team_code, pos:POSNUM[p.position]||3};
   });
 
-  // bygg spelare från boot
-  const players=[];
-  boot.elements.forEach(e=>{
-    const nk=norm(e.web_name), tk=norm(tFull[e.team]), et=e.element_type;
-    let h=histByKey[nk+'|'+tk+'|'+et]||histByNP[nk+'|'+et]||null;
+  // --- Bygg råtabell ---
+  const raw=[];
+  DATA.prices.forEach(r=>{
+    const m=meta[+r.id]; if(!m||!m.team)return;
+    const h=histByCode[m.code];
     if(!h||h.minutes<minMin)return;
+    raw.push({id:+r.id, name:m.name, team:m.team, team_short:tShort[m.team], pos:m.pos,
+      cost:+r.now_cost||0, status:r.status||'a',
+      cop:(r.chance_of_playing_next_round===''||r.chance_of_playing_next_round==null)
+          ?null:+r.chance_of_playing_next_round,
+      penOrder:(r.penalties_order===''||r.penalties_order==null)?null:+r.penalties_order,
+      h});
+  });
+
+  // --- Positionssnitt för regularisering ---
+  const psum={};[1,2,3,4].forEach(p=>psum[p]={xg:0,xa:0,xgc:0,p90:0,cs:0,mt:0,bon:0,dc:0});
+  raw.forEach(r=>{const s=psum[r.pos],p90=r.h.minutes/90;
+    s.xg+=r.h.xg; s.xa+=r.h.xa; s.xgc+=r.h.xgc; s.p90+=p90;
+    s.cs+=r.h.cs; s.mt+=Math.max(1,r.h.starts); s.bon+=r.h.bonus; s.dc+=r.h.dc;});
+  const pmean={};[1,2,3,4].forEach(p=>{const s=psum[p];pmean[p]={
+    xg:s.p90?s.xg/s.p90:0, xa:s.p90?s.xa/s.p90:0, xgc:s.p90?s.xgc/s.p90:0,
+    cs:s.mt?s.cs/s.mt:0.25, bon:s.p90?s.bon/s.p90:0, dc:s.p90?s.dc/s.p90:0};});
+
+  const goalPts={1:10,2:6,3:5,4:4}, csPts={1:4,2:4,3:1,4:0};
+  const DC_THR={1:999,2:10,3:12,4:12};
+  function shrink(v,n,prior){return (v*n+prior*K)/(n+K);}
+
+  // --- Fixtures per lag ---
+  const teamFix={};
+  DATA.fix.forEach(f=>{
+    // bara Premier League — repot täcker även cup/Europa, som inte ger FPL-poäng
+    if(f.tournament && f.tournament!=='prem')return;
+    const gw=+f.gameweek, th=+f.home_team, ta=+f.away_team;
+    if(!gw||!th||!ta||!tShort[th]||!tShort[ta])return;
+    const eh=+f.home_team_elo||tElo[th], ea=+f.away_team_elo||tElo[ta];
+    const Eh=eloExp(eh,ea,true), Ea=1-Eh;
+    (teamFix[th]=teamFix[th]||[]).push({gw,opp:ta,home:true, E:Eh,fdr:expToFdr(Eh)});
+    (teamFix[ta]=teamFix[ta]||[]).push({gw,opp:th,home:false,E:Ea,fdr:expToFdr(Ea)});
+  });
+
+  // --- pp90 per spelare ---
+  const players=[];
+  raw.forEach(r=>{
+    const h=r.h, p90=h.minutes/90, et=r.pos;
+    const xg90 =shrink(h.xg/p90, p90, pmean[et].xg);
+    const xa90 =shrink(h.xa/p90, p90, pmean[et].xa);
+    const xgc90=shrink(h.xgc/p90,p90, pmean[et].xgc);
+    const csR  =shrink(h.cs/Math.max(1,h.starts), Math.max(1,h.starts), pmean[et].cs);
+    const bon90=USE_BON?shrink(h.bonus/p90, p90, pmean[et].bon):0;
+    // OBS: repots xG är TOTAL xG och innehåller redan straffar. Vi lägger därför INTE
+    // på ett separat strafftillägg — det vore dubbelräkning. penalties_order visas
+    // istället som flagga i tabellen (rollbyten mellan säsonger fångas inte av modellen).
+    // DefCon: Poisson på defensiva bidrag per 90 (validerad mot empirisk frekvens, r=0.97)
+    const dcLam=shrink(h.dc/p90, p90, pmean[et].dc);
+    const dcRate=USE_DC?poisAtLeast(DC_THR[et],dcLam):0;
+
+    let pp=2 + xg90*goalPts[et] + xa90*3 + bon90;
+    if(et==1||et==2){pp+=csR*csPts[et]; pp-=(xgc90/2);}
+    else if(et==3){pp+=csR*csPts[et];}
+    pp+=dcRate*2;
+
     let avail=1;
-    if(e.status!=='a')avail=0.5;
-    if(e.chance_of_playing_next_round!=null&&e.chance_of_playing_next_round<100)
-      avail=e.chance_of_playing_next_round/100;
-    const minshare=Math.min(1,h.minutes/(38*90));
-    players.push({id:e.id,name:e.web_name,team:e.team,team_short:tShort[e.team],
-      pos:et,cost:e.now_cost/10,pp90:h.pp90,minshare,avail,
-      fixtures:teamFix[e.team]||[]});
+    if(r.status!=='a')avail=0.5;
+    if(r.cop!=null&&r.cop<100)avail=r.cop/100;
+
+    players.push({id:r.id,name:r.name,team:r.team,team_short:r.team_short,pos:et,
+      cost:r.cost,pp90:pp,minshare:Math.min(1,h.minutes/(38*90)),avail,
+      penOrder:r.penOrder,bon90,dcRate,fixtures:teamFix[r.team]||[]});
   });
   return {players,tShort};
 }
@@ -521,9 +587,10 @@ function project(model){
   model.players.forEach(p=>{
     let sum=0, fdrs=[];
     p.fixtures.filter(f=>f.gw<=H).forEach(f=>{
-      const fmult=1+(3-f.fdr)*fw;
-      const hmult=f.home?1.03:0.98;
-      sum+=p.pp90*p.minshare*fmult*hmult*p.avail;
+      // Elo ger förväntad poängandel 0-1. E=0.5 är neutralt.
+      // Hemmaplan ligger redan i E, så ingen separat hemmamultiplikator.
+      const fmult=1+(f.E-0.5)*4*fw;
+      sum+=p.pp90*p.minshare*fmult*p.avail;
       fdrs.push(f.fdr);
     });
     p.projH=+sum.toFixed(1);
@@ -619,7 +686,24 @@ function optimize(players){
 let sortKey='projH', sortDir=-1, posFilter=0, onlyTeam=false, squadIds=new Set();
 const LOCKED=new Set();
 
-function run(){
+async function run(){
+  clearErr();
+  const btn=document.getElementById('run');
+  if(!DATA.teams){
+    btn.disabled=true; btn.textContent='Hämtar…';
+    try{ await fetchAll(); }
+    catch(err){
+      showErr('Kunde inte hämta data: '+err.message+
+        '\nKontrollera nätverket, eller att repot är tillgängligt.');
+      btn.disabled=false; btn.textContent='Försök igen'; return;
+    }
+    btn.disabled=false; btn.textContent='Kör om';
+    const st=document.getElementById('status');
+    st.classList.add('ready'); st.innerHTML='<span class="dot"></span>Data hämtad';
+  }
+  recompute();
+}
+function recompute(){
   clearErr();
   try{
     const model=buildModel();
@@ -688,7 +772,7 @@ function renderTable(){
     const nx=p.next5&&p.next5[0];
     tr.innerHTML=`
       <td class="name ${inT?'inteam':''}">
-        <span class="dot-pos p${p.pos}"></span>${p.name}${inT?'<span class="tag">i laget</span>':''}</td>
+        <span class="dot-pos p${p.pos}"></span>${p.name}${p.penOrder===1?'<span class="tag pen" title="Utsedd straffläggare">P</span>':''}${inT?'<span class="tag">i laget</span>':''}</td>
       <td class="mono">${p.team_short}</td>
       <td class="mono">${POSMAP[p.pos]}</td>
       <td class="mono">${p.cost.toFixed(1)}</td>
@@ -822,7 +906,10 @@ document.getElementById('cmp-run').addEventListener('click',runCompare);
     if(id=='c-f')document.getElementById('v-f').textContent=v+'%';
     if(id=='c-m')document.getElementById('v-m').textContent=v;
   });
-  document.getElementById(id).addEventListener('change',()=>{if(MODEL)run();});
+  document.getElementById(id).addEventListener('change',()=>{if(MODEL)recompute();});
+});
+['c-dc','c-bon'].forEach(id=>{
+  document.getElementById(id).addEventListener('change',()=>{if(MODEL)recompute();});
 });
 document.getElementById('search').addEventListener('input',()=>{if(MODEL)renderTable();});
 document.querySelectorAll('.pill[data-pos]').forEach(pl=>{
