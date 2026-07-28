@@ -27,7 +27,7 @@ def main():
     ap.add_argument('results', help='CSV med faktiska resultat (samma format som ursprungsfilen)')
     ap.add_argument('--gw', type=int, nargs='*', default=None, help='Begränsa till dessa gameweeks')
     ap.add_argument('--proj', default='proj_by_gw.csv')
-    ap.add_argument('--squad', default='squad_xg.csv')
+    ap.add_argument('--squad', default='squad_optimal.csv')
     args = ap.parse_args()
 
     proj = pd.read_csv(args.proj)          # id,name,team_short,pos,cost,gw,opp,home,fdr,proj
@@ -50,6 +50,12 @@ def main():
     act = (actual[actual['gameweek'].isin(played_gws)]
            .groupby(['nkey','gameweek'])['total_points'].sum().reset_index()
            .rename(columns={'total_points':'actual','gameweek':'gw'}))
+
+    # proj_by_gw kan ha 'team' (ny pipeline) eller 'team_short' (äldre)
+    if 'team_short' not in proj.columns and 'team' in proj.columns:
+        proj = proj.rename(columns={'team': 'team_short'})
+    if 'team_short' not in proj.columns:
+        proj['team_short'] = ''
 
     pr = proj[proj['gw'].isin(played_gws)][['nkey','gw','name','team_short','pos','proj']]
 
@@ -87,6 +93,10 @@ def main():
 
     # Hur gick truppen?
     try:
+        if not __import__('os').path.exists(args.squad):
+            for alt in ('squad_optimal.csv','squad_xg.csv','squad.csv'):
+                if __import__('os').path.exists(alt):
+                    args.squad = alt; break
         squad = pd.read_csv(args.squad)
         squad['nkey']=squad['name'].map(norm)
         sq = m[m['nkey'].isin(squad['nkey'])]
