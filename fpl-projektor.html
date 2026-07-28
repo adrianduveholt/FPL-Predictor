@@ -284,6 +284,42 @@
   .warnbox{background:#241a10;border:1px solid #3d2d18;border-radius:10px;padding:14px 16px;
     font-size:12.5px;color:#e8c9a0;line-height:1.6}
   .warnbox b{color:var(--warn)}
+  /* halvor och alternativ i chip-vyn */
+  .halfband{display:flex;align-items:baseline;gap:10px;padding:11px 14px;
+    background:linear-gradient(90deg,#12241a,transparent);border-left:2px solid var(--acc);
+    border-radius:3px;margin:2px 0 4px}
+  .halfband.two{background:linear-gradient(90deg,#1a2430,transparent);border-left-color:#5fb2ff}
+  .halfband .hb-n{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.08em;
+    color:var(--acc)}
+  .halfband.two .hb-n{color:#5fb2ff}
+  .halfband .hb-t{font-family:var(--mono);font-size:10px;color:var(--dim)}
+  .halfbreak{display:flex;align-items:center;gap:12px;margin:22px 0 12px}
+  .halfbreak .hbk-line{flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--line))}
+  .halfbreak .hbk-line:last-child{background:linear-gradient(90deg,var(--line),transparent)}
+  .halfbreak .hbk-txt{font-size:11px;color:var(--dim);text-align:center;line-height:1.5;
+    flex:none;max-width:330px}
+  .halfbreak .hbk-txt b{color:var(--warn);font-family:var(--mono);font-size:11px;
+    letter-spacing:.03em}
+  .opts{margin-top:11px;display:flex;flex-direction:column;gap:5px}
+  .opt{display:flex;align-items:center;gap:9px}
+  .opt .rk{font-family:var(--mono);font-size:9.5px;color:var(--dimmer);width:11px;flex:none}
+  .opt .ogw{font-family:var(--mono);font-size:11px;color:var(--dim);width:52px;flex:none}
+  .opt.best .ogw{color:var(--ink);font-weight:600}
+  .opt .obar{flex:1;height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+  .opt .ofill{height:6px;border-radius:3px}
+  .opt .oval{font-family:var(--mono);font-size:11px;font-weight:600;width:56px;
+    text-align:right;flex:none;color:var(--dim)}
+  .opt.best .oval{font-size:12px}
+  .chipspread{font-size:11px;color:var(--dimmer);margin-top:9px;line-height:1.45}
+  /* omgångsväljare */
+  .gwpick{display:flex;align-items:center;gap:11px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:10px;padding:9px 13px;min-width:0}
+  .gwpick .tlabel{flex:none}
+  .gwpills{display:flex;gap:5px;overflow-x:auto;padding-bottom:2px;flex:1;min-width:0;
+    scrollbar-width:thin}
+  .gwpills .pill{flex:none;padding:5px 11px;font-size:10px}
+  .gwpills .pill.blank{border-color:#3d2020;color:var(--bad)}
+  .gwpills .pill.dbl{border-color:#1d3a2b;color:var(--acc)}
   .teamcard{background:var(--panel2);border:1px solid var(--line);border-radius:11px;
     padding:14px 16px}
   .teamcard ol{padding-left:18px}
@@ -517,7 +553,11 @@
 
     <!-- ================= OPTIMERAT LAG ================= -->
     <section data-panel="lag">
-      <div class="kpis" id="kpis"></div>
+      <div class="gwpick">
+        <span class="tlabel">UPPSTÄLLNING</span>
+        <div class="gwpills" id="gwpills"></div>
+      </div>
+      <div class="kpis" id="kpis" style="margin-top:11px"></div>
       <div class="split" style="margin-top:13px">
         <div class="col">
           <div class="pitch" id="pitch"></div>
@@ -906,68 +946,121 @@ function fxDots(next5,skip){
 }
 
 /* ============ Lagoptimering: greedy value + lokal förbättring ============ */
+/* Truppoptimering som maximerar STARTELVANS poäng, inte alla 15.
+   Bänken ger inga poäng, så pengarna ska ligga i elvan och bänken vara billig.
+   Testar alla lagliga formationer (3-5 back, 2-5 mid, 1-3 anfall) och behåller bästa. */
 function optimize(players){
   const NEED={1:2,2:5,3:5,4:3}, BUDGET=100, MAXTEAM=3;
-  // Force Haaland-typ: vi tvingar inte, men kaptenval sker efteråt.
-  // Greedy på value, sedan swap-förbättring på total proj.
-  const byPos={1:[],2:[],3:[],4:[]};
-  players.forEach(p=>byPos[p.pos].push(p));
-  Object.values(byPos).forEach(a=>a.sort((x,y)=>y.valH-x.valH));
+  const byProj={1:[],2:[],3:[],4:[]};
+  players.forEach(p=>byProj[p.pos].push(p));
+  [1,2,3,4].forEach(q=>byProj[q].sort((a,b)=>b.projH-a.projH));
+  const byCost={};
+  [1,2,3,4].forEach(q=>byCost[q]=byProj[q].slice().sort((a,b)=>a.cost-b.cost));
+  const locked=players.filter(p=>LOCKED.has(p.id));
 
-  // seed: ta value-toppar per position inom lag/budget
-  let squad=[]; const teamCount={}; const posFilled={1:0,2:0,3:0,4:0};
-  function canAdd(p){
-    return (teamCount[p.team_short]||0)<MAXTEAM;
+  const forms=[];
+  for(let d=3;d<=5;d++)for(let m=2;m<=5;m++){
+    const f=10-d-m; if(f>=1&&f<=3)forms.push([d,m,f]);
   }
-  // 0) tvinga in låsta spelare först (om de får plats positionsmässigt)
-  players.filter(p=>LOCKED.has(p.id)).forEach(p=>{
-    if(posFilled[p.pos]>=NEED[p.pos])return;
-    if(!canAdd(p))return;
-    squad.push(p);teamCount[p.team_short]=(teamCount[p.team_short]||0)+1;posFilled[p.pos]++;
-  });
-  for(const pos of [1,2,3,4]){
-    let added=posFilled[pos];
-    for(const p of byPos[pos]){
-      if(added>=NEED[pos])break;
-      if(squad.includes(p))continue;
-      if(!canAdd(p))continue;
-      const cost=squad.reduce((s,x)=>s+x.cost,0)+p.cost;
-      // grov budgetgräns per steg
-      if(cost>BUDGET)continue;
-      squad.push(p);teamCount[p.team_short]=(teamCount[p.team_short]||0)+1;added++;
+
+  function attempt(d,m,f){
+    const want={1:1,2:d,3:m,4:f};
+    const need={1:2,2:5,3:5,4:3};
+    const tc={}, used=new Set();
+    const xi=[], bench=[];
+    const ok=p=>!used.has(p.id)&&(tc[p.team_short]||0)<MAXTEAM;
+    const take=(p,arr)=>{arr.push(p);used.add(p.id);
+      tc[p.team_short]=(tc[p.team_short]||0)+1;};
+    const cnt=()=>{const c={1:0,2:0,3:0,4:0};
+      xi.forEach(p=>c[p.pos]++);return c;};
+
+    // 1. låsta spelare först — i elvan om formationen tillåter, annars bänk
+    for(const p of locked){
+      const c=cnt();
+      if(c[p.pos]<want[p.pos]&&ok(p))take(p,xi);
+      else if(xi.filter(x=>x.pos===p.pos).length+bench.filter(x=>x.pos===p.pos).length
+              <need[p.pos]&&ok(p))take(p,bench);
     }
-    // om vi inte fyllde pga budget, ta billigaste tillgängliga
-    while(added<NEED[pos]){
-      const cand=byPos[pos].filter(p=>!squad.includes(p)&&canAdd(p))
-        .sort((a,b)=>a.cost-b.cost)[0];
-      if(!cand)break;
-      squad.push(cand);teamCount[cand.team_short]=(teamCount[cand.team_short]||0)+1;added++;
+    // 2. fyll elvan med högst projicerade
+    for(const q of [1,2,3,4]){
+      for(const p of byProj[q]){
+        if(xi.filter(x=>x.pos===q).length>=want[q])break;
+        if(!ok(p))continue;
+        take(p,xi);
+      }
+      if(xi.filter(x=>x.pos===q).length<want[q])return null;
     }
-  }
-  // lokal förbättring: byt ut en spelare mot en bättre (högre proj) om budget/lag tillåter
-  let improved=true, guard=0;
-  while(improved && guard++<400){
-    improved=false;
-    for(let i=0;i<squad.length;i++){
-      const cur=squad[i];
-      if(LOCKED.has(cur.id))continue;   // rör inte låsta
-      const pool=byPos[cur.pos];
-      for(const cand of pool){
-        if(squad.includes(cand))continue;
-        const tc=teamCount[cand.team_short]||0;
-        const sameTeam=cand.team_short===cur.team_short;
-        if(!sameTeam && tc>=MAXTEAM)continue;
-        const newCost=squad.reduce((s,x)=>s+x.cost,0)-cur.cost+cand.cost;
-        if(newCost>BUDGET)continue;
-        if(cand.projH>cur.projH){
-          teamCount[cur.team_short]--; teamCount[cand.team_short]=(teamCount[cand.team_short]||0)+1;
-          squad[i]=cand; improved=true; break;
+    // 3. fyll bänken med billigaste möjliga
+    for(const q of [1,2,3,4]){
+      const have=()=>xi.filter(x=>x.pos===q).length+bench.filter(x=>x.pos===q).length;
+      for(const p of byCost[q]){
+        if(have()>=need[q])break;
+        if(!ok(p))continue;
+        take(p,bench);
+      }
+      if(have()<need[q])return null;
+    }
+    // 4. reparera budget: nedgradera den XI-spelare som kostar mest per poäng
+    const cost=()=>xi.concat(bench).reduce((s,p)=>s+p.cost,0);
+    let guard=0;
+    while(cost()>BUDGET+1e-9&&guard++<220){
+      let bestSwap=null;
+      for(let i=0;i<xi.length;i++){
+        const o=xi[i];
+        if(LOCKED.has(o.id))continue;
+        for(const c of byProj[o.pos]){
+          if(c.cost>=o.cost||used.has(c.id))continue;
+          if(c.team_short!==o.team_short&&(tc[c.team_short]||0)>=MAXTEAM)continue;
+          const dc=o.cost-c.cost, dv=o.projH-c.projH;
+          const ratio=dv/Math.max(0.1,dc);          // minsta poängförlust per frigjord miljon
+          if(!bestSwap||ratio<bestSwap.ratio)bestSwap={i,o,c,ratio};
         }
       }
-      if(improved)break;
+      if(!bestSwap)break;
+      const {i,o,c}=bestSwap;
+      used.delete(o.id); tc[o.team_short]--;
+      xi[i]=c; used.add(c.id); tc[c.team_short]=(tc[c.team_short]||0)+1;
     }
+    if(cost()>BUDGET+1e-9)return null;
+    // 5. lokal förbättring: uppgradera elvan för pengarna som blev kvar
+    guard=0;
+    let improved=true;
+    while(improved&&guard++<220){
+      improved=false;
+      for(let i=0;i<xi.length;i++){
+        const o=xi[i];
+        if(LOCKED.has(o.id))continue;
+        for(const c of byProj[o.pos]){
+          if(c.projH<=o.projH)break;
+          if(used.has(c.id))continue;
+          if(c.team_short!==o.team_short&&(tc[c.team_short]||0)>=MAXTEAM)continue;
+          if(cost()-o.cost+c.cost>BUDGET+1e-9)continue;
+          used.delete(o.id); tc[o.team_short]--;
+          xi[i]=c; used.add(c.id); tc[c.team_short]=(tc[c.team_short]||0)+1;
+          improved=true; break;
+        }
+        if(improved)break;
+      }
+    }
+    const capV=Math.max(...xi.filter(p=>p.pos!==1).map(p=>p.projH),0);
+    const val=xi.reduce((s,p)=>s+p.projH,0)+capV;
+    return {squad:xi.concat(bench),xi,val,form:[d,m,f]};
   }
-  return squad;
+
+  let best=null;
+  forms.forEach(([d,m,f])=>{
+    const r=attempt(d,m,f);
+    if(r&&(!best||r.val>best.val))best=r;
+  });
+  if(!best){   // sista utväg: billigaste giltiga trupp
+    const sq=[]; const tc={};
+    [1,2,3,4].forEach(q=>byCost[q].forEach(p=>{
+      if(sq.filter(x=>x.pos===q).length>=NEED[q])return;
+      if((tc[p.team_short]||0)>=MAXTEAM)return;
+      sq.push(p);tc[p.team_short]=(tc[p.team_short]||0)+1;}));
+    return sq;
+  }
+  return best.squad;
 }
 
 /* ============ Export ============ */
@@ -1382,7 +1475,7 @@ function analyseChips(){
 /* ============ Tillstånd ============ */
 let sortKey='projH', sortDir=-1, posFilter=0, onlyTeam=false, squadIds=new Set();
 const LOCKED=new Set();
-let TAB='lag', SEL=null;
+let TAB='lag', SEL=null, LAG_GW=0;   // 0 = snitt över horisonten
 const XI_MAXP={1:1,2:5,3:5,4:3}, XI_MINP={1:1,2:3,3:2,4:1};
 
 const PAGE={
@@ -1403,9 +1496,16 @@ function fxTicks(next5){
   return `<div class="fxbar">`+(next5||[]).map(f=>
     `<i class="${fdrCls(f.fdr)}" title="GW${f.gw}: ${f.opp} (${f.home?'H':'A'})"></i>`).join('')+`</div>`;
 }
-/* Startelva ur truppen, rankad på projektion över horisonten */
-function pickXI(squad){
-  const s=squad.slice().sort((a,b)=>b.projH-a.projH);
+/* Värde för en spelare: en specifik omgång, eller hela horisonten */
+function pval(p,gw){
+  if(!gw)return p.projH;
+  const o=(MODEL.gpm&&MODEL.gpm.get(p.id))||{};
+  return o[gw]||0;
+}
+/* Startelva ur truppen. Med gw satt väljs elvan för just den omgången,
+   vilket kan ge en annan formation än horisontens genomsnitt. */
+function pickXI(squad,gw){
+  const s=squad.slice().sort((a,b)=>pval(b,gw)-pval(a,gw));
   const gk=s.filter(p=>p.pos===1), out=s.filter(p=>p.pos!==1);
   const xi=gk.length?[gk[0]]:[]; const cnt={1:xi.length,2:0,3:0,4:0};
   [2,3,4].forEach(q=>out.filter(p=>p.pos===q).slice(0,XI_MINP[q])
@@ -1415,8 +1515,8 @@ function pickXI(squad){
     if(xi.includes(p)||cnt[p.pos]>=XI_MAXP[p.pos])continue;
     xi.push(p);cnt[p.pos]++;
   }
-  const bench=squad.filter(p=>!xi.includes(p)).sort((a,b)=>b.projH-a.projH);
-  const cap=xi.filter(p=>p.pos!==1).sort((a,b)=>b.projH-a.projH)[0]||xi[0];
+  const bench=squad.filter(p=>!xi.includes(p)).sort((a,b)=>pval(b,gw)-pval(a,gw));
+  const cap=xi.filter(p=>p.pos!==1).sort((a,b)=>pval(b,gw)-pval(a,gw))[0]||xi[0];
   return {xi,bench,cap};
 }
 
@@ -1467,6 +1567,7 @@ function recompute(){
     const squad=optimize(model.players);
     squadIds=new Set(squad.map(p=>p.id));
     MODEL={model,squad};
+    MODEL.gpm=gwPointsMap(model.players,38,(+document.getElementById('c-f').value)/100);
     document.getElementById('m-n').textContent=model.players.length;
     const gw=Math.min(...squad.flatMap(p=>p.next5||[]).map(f=>f.gw).concat([1]));
     document.getElementById('gwbadge').textContent='GW '+gw;
@@ -1475,33 +1576,59 @@ function recompute(){
   }catch(err){showErr('Fel vid körning: '+err.message);console.error(err);}
 }
 
+function renderGwPills(H){
+  const box=document.getElementById('gwpills');
+  const squad=MODEL.squad;
+  let html=`<span class="pill ${LAG_GW===0?'on':''}" data-gw="0">SNITT</span>`;
+  for(let g=1;g<=H;g++){
+    // hur många av truppens spelare har match denna omgång?
+    let playing=0, doubles=0;
+    squad.forEach(p=>{
+      const n=(p.fixtures||[]).filter(f=>f.gw===g).length;
+      if(n>0)playing++; if(n>1)doubles++;
+    });
+    const cls=doubles?'dbl':(playing<squad.length?'blank':'');
+    const t=doubles?`${doubles} spelare har dubbelomgång`
+      :(playing<squad.length?`${squad.length-playing} spelare utan match`
+      :`alla ${playing} spelar`);
+    html+=`<span class="pill ${LAG_GW===g?'on':''} ${cls}" data-gw="${g}"
+      title="GW ${g} — ${t}">GW ${g}</span>`;
+  }
+  box.innerHTML=html;
+}
+
 /* ============ Panel: Optimerat lag ============ */
 function renderLag(){
   const {squad}=MODEL;
-  const {xi,bench,cap}=pickXI(squad);
+  const H=+document.getElementById('c-h').value;
+  if(LAG_GW>H)LAG_GW=0;
+  renderGwPills(H);
+  const gw=LAG_GW;
+  const {xi,bench,cap}=pickXI(squad,gw);
   const cost=squad.reduce((s,p)=>s+p.cost,0);
-  const proj=squad.reduce((s,p)=>s+p.projH,0);
-  const H=document.getElementById('c-h').value;
+  const benchCost=bench.reduce((s,p)=>s+p.cost,0);
+  const xiVal=xi.reduce((s,p)=>s+pval(p,gw),0)+(cap?pval(cap,gw):0);
+  const form=[2,3,4].map(q=>xi.filter(p=>p.pos===q).length).join('-');
+  const per=gw?`GW ${gw}`:`GW1\u2013${H}`;
 
   document.getElementById('psub').textContent=
-    `${xi.filter(p=>p.pos===2).length}-${xi.filter(p=>p.pos===3).length}-`+
-    `${xi.filter(p=>p.pos===4).length} · kapten ${cap?cap.name:'–'} · GW1–${H}`;
+    `${form} \u00b7 kapten ${cap?cap.name:'\u2013'} \u00b7 ${per}`;
 
   document.getElementById('kpis').innerHTML=[
-    ['FÖRVÄNTAT',proj.toFixed(1),`GW1–${H}`],
-    ['KOSTNAD',cost.toFixed(1),(100-cost).toFixed(1)+' kvar'],
-    ['KAPTEN',cap?cap.name:'–',cap?'2× '+cap.projH.toFixed(1):''],
-    ['SPELARE I MODELL',MODEL.model.players.length,'efter min-speltid'],
+    ['ELVAN + KAPTEN',xiVal.toFixed(1),per],
+    ['KOSTNAD',cost.toFixed(1),`b\u00e4nk ${benchCost.toFixed(1)}m`],
+    ['FORMATION',form,gw?`optimal f\u00f6r GW ${gw}`:'snitt \u00f6ver horisonten'],
+    ['KAPTEN',cap?cap.name:'\u2013',cap?'2\u00d7 '+pval(cap,gw).toFixed(1):''],
   ].map(([k,v,s])=>`<div class="kpi"><div class="k">${k}</div>
     <div class="v" style="${String(v).length>7?'font-size:17px':''}">${esc(v)}</div>
     <div class="s">${esc(s)}</div></div>`).join('');
 
   const LINES=[[1,'MÅLVAKT'],[2,'BACKAR'],[3,'MITTFÄLT'],[4,'ANFALL']];
   document.getElementById('pitch').innerHTML=LINES.map(([pos,label])=>{
-    const row=xi.filter(p=>p.pos===pos).sort((a,b)=>b.projH-a.projH);
+    const row=xi.filter(p=>p.pos===pos).sort((a,b)=>pval(b,gw)-pval(a,gw));
     if(!row.length)return '';
     return `<div><div class="lineh"><span>${label}</span><i></i></div>
-      <div class="lrow">`+row.map(p=>pcard(p,p===cap)).join('')+`</div></div>`;
+      <div class="lrow">`+row.map(p=>pcard(p,p===cap,gw)).join('')+`</div></div>`;
   }).join('');
 
   document.getElementById('bench').innerHTML=bench.map((p,i)=>
@@ -1509,23 +1636,24 @@ function renderLag(){
       <span class="no">${i+1}</span>
       <div style="flex:1;min-width:0"><div class="nm">${esc(p.name)}</div>
         <div class="sub">${esc(p.team_short)} · ${POSMAP[p.pos]}</div></div>
-      <span class="xp">${p.projH.toFixed(1)}</span></div>`).join('');
+      <span class="xp">${pval(p,gw).toFixed(1)}</span></div>`).join('');
 
   renderBreakdown(xi);
   renderScatter();
   renderHeat(squad);
 }
-function pcard(p,isCap){
-  const n1=(p.next5||[])[0];
+function pcard(p,isCap,gw){
+  const n1=gw?(p.fixtures||[]).filter(f=>f.gw===gw)[0]:(p.next5||[])[0];
+  const opp=n1?(gw?(MODEL.model.tShort[n1.opp]||''):n1.opp):'';
   return `<div class="pcard ${SEL===p.id?'sel':''}" data-id="${p.id}">
     ${isCap?'<span class="capb">C</span>':''}
     ${p.penOrder===1?'<span class="penb">P</span>':''}
     <div class="top"><span class="nm">${esc(p.name)}</span>
       <span class="ps p${p.pos}">${POSMAP[p.pos]}</span></div>
     <div class="meta">${esc(p.team_short)} · ${p.cost.toFixed(1)}</div>
-    <div class="row2"><span class="xp">${p.projH.toFixed(1)}</span>
+    <div class="row2"><span class="xp">${pval(p,gw).toFixed(1)}</span>
       <span style="font-family:var(--mono);font-size:9.5px;color:var(--dim)">${
-        n1?esc(n1.opp)+(n1.home?' H':' A'):''}</span></div>
+        n1?esc(opp)+(n1.home?' H':' A'):'\u2014'}</span></div>
     ${fxTicks(p.next5)}</div>`;
 }
 function renderBreakdown(xi){
@@ -1775,56 +1903,80 @@ function renderChips(){
   box.classList.remove('hidden');
   const r=analyseChips();
   if(r.error){box.innerHTML=`<p class="err">${esc(r.error)}</p>`;return;}
+  const COL={bb:'#3ddc97',tc:'#ffb454',fh:'#5fb2ff',wc:'#c8a2ff'};
   let html='';
   if(!r.doubles&&!r.blanks){
     html+=`<div class="warnbox"><b>Preliminär rangordning.</b> Schemat innehåller ännu inga
       dubbel- eller blankomgångar — de uppstår först när cupmatcher tvingar fram ommatchningar
-      under säsongen. Det är de som i praktiken avgör chip-timing: Bench Boost är värt ungefär
-      dubbelt i en dubbelomgång, och Free Hit får nästan hela sitt värde från blanka omgångar.
-      Kör om analysen när omgångarna spricker.</div>`;
+      under säsongen. Det är de som i praktiken avgör chip-timing. Ligger alternativen nära
+      varandra nedan betyder det att timingen spelar liten roll ännu.</div>`;
   }
   html+=`<div class="split" style="margin-top:14px"><div class="col">`;
+
   r.halves.forEach((res,i)=>{
-    html+=`<div class="lineh" style="padding:6px 0 2px"><span>HALVA ${i+1} · GW${
-      i===0?'1–19':'20–38'}</span><i></i></div>`;
+    if(i===0){
+      html+=`<div class="halfband">
+        <div class="hb-n">FÖRSTA HALVAN</div>
+        <div class="hb-t">GW 1–19 · ett av varje chip</div></div>`;
+    }else{
+      html+=`<div class="halfbreak">
+        <div class="hbk-line"></div>
+        <div class="hbk-txt"><b>Chipsen förnyas efter GW 19</b><br>
+          Du får ett nytt av varje — det som inte används i första halvan går förlorat.</div>
+        <div class="hbk-line"></div></div>
+        <div class="halfband two">
+        <div class="hb-n">ANDRA HALVAN</div>
+        <div class="hb-t">GW 20–38 · nya chips</div></div>`;
+    }
     html+=CHIP_DEF.map(cd=>{
-      const l=res[cd.k], b=l[0], [lo,hi]=cd.win[i];
-      const col={bb:'#3ddc97',tc:'#ffb454',fh:'#5fb2ff',wc:'#c8a2ff'}[cd.k];
-      const alts=l.slice(1,4).map(x=>`GW${x.gw} ${x.v>=0?'+':''}${x.v.toFixed(1)}`).join('   ');
+      const l=res[cd.k].slice(0,3), [lo,hi]=cd.win[i], col=COL[cd.k];
+      if(!l.length)return '';
+      const top=Math.max(...l.map(x=>Math.abs(x.v)),0.01);
+      const spread=l.length>1?(l[0].v-l[l.length-1].v):0;
+      const opts=l.map((x,k)=>`
+        <div class="opt ${k===0?'best':''}">
+          <span class="rk">${k+1}</span>
+          <span class="ogw">GW ${x.gw}</span>
+          <div class="obar"><div class="ofill" style="width:${Math.abs(x.v)/top*100}%;
+            background:${k===0?col:'#2b3a45'}"></div></div>
+          <span class="oval" style="${k===0?'color:'+col:''}">${
+            x.v>=0?'+':''}${x.v.toFixed(1)} p</span>
+        </div>`).join('');
       return `<div class="chipcard">
         <div class="chiphead">
           <div class="l"><span class="dot" style="background:${col}"></span>
             <span class="nm">${cd.nm}</span></div>
-          <span class="gw">${b?'GW '+b.gw:'–'}</span></div>
-        <div class="chipwhy">${esc(cd.desc)}. Fönster GW${lo}–${hi}.${
-          b&&b.note?' '+esc(b.note)+'.':''}</div>
-        <div class="chipfoot">
-          <div class="alt">${alts?'sedan: '+alts:''}</div>
-          <div class="val"><div class="k">VÄRDE</div>
-            <div class="v" style="color:${col}">${b?(b.v>=0?'+':'')+b.v.toFixed(1)+' p':'–'}</div>
-          </div></div></div>`;
+          <span class="gw" style="color:${col};border-color:${col}33;background:${col}14">
+            ${l[0]?'GW '+l[0].gw:'–'}</span></div>
+        <div class="chipwhy">${esc(cd.desc)} · fönster GW${lo}–${hi}${
+          l[0]&&l[0].note?' · '+esc(l[0].note):''}</div>
+        <div class="opts">${opts}</div>
+        <div class="chipspread">${
+          Math.abs(spread)<0.5
+            ? 'Alternativen ligger inom '+Math.abs(spread).toFixed(1)+
+              ' p — timingen spelar liten roll, välj fritt.'
+            : 'Bästa valet är '+spread.toFixed(1)+' p före tredje alternativet.'}</div>
+      </div>`;
     }).join('');
   });
+
   html+=`</div><div class="col">
     <div class="card"><div class="ch">DUBBEL- OCH BLANKOMGÅNGAR</div>
-      <div class="gwgrid">`+
-      (r.doubles||r.blanks
-        ? `<div class="gwline"><span class="g">–</span><div class="b" style="background:#12241a">
-            <span style="color:var(--acc)">${r.doubles} dubbel · ${r.blanks} blank</span>
-           </div></div>`
-        : Array.from({length:8},(_,i)=>i+1).map(g=>
-            `<div class="gwline"><span class="g">GW ${g}</span>
-              <div class="b" style="background:#131c24"><span style="color:var(--dimmer)">
-              normal</span></div></div>`).join('')
-      )+`</div>
-      <div class="cnote">${r.doubles||r.blanks?'':'Alla omgångar har exakt en match per lag.'}</div>
+      <div class="cnote">${r.doubles||r.blanks
+        ? `<b style="color:var(--acc)">${r.doubles} dubbelomgångar</b> och
+           <b style="color:var(--bad)">${r.blanks} blanka</b> i schemat. Chip-värdena tar
+           hänsyn till dem.`
+        : 'Alla 38 omgångar har exakt en match per lag. Inga dubblar, inga blanka — därför är '+
+          'skillnaderna mellan omgångarna små.'}</div>
     </div>
-    <div class="card"><div class="ch">SÅ RÄKNAR MODELLEN</div>
-      <div class="cnote">Triple Captain: vad kaptenen ger en gång till. Bench Boost: bänkens
-        fyra spelare. Free Hit: bästa möjliga elva minus din egen. Wildcard: nyoptimerad trupp
-        för resten av fönstret. Wildcard och Free Hit räknas mot ditt lagvärde, inte mot 100m.</div>
-      <div class="cnote">Wildcard är det minst tillförlitliga måttet — det räknar inte in att
-        du ändå gör vanliga byten. Läs det som "hur långt från optimalt ligger mitt lag".</div>
+    <div class="card"><div class="ch">SÅ VÄRDERAS DE</div>
+      <div class="cnote"><b>Triple Captain</b> — vad kaptenen ger en gång till.<br>
+        <b>Bench Boost</b> — bänkens fyra spelare.<br>
+        <b>Free Hit</b> — bästa möjliga elva minus din egen.<br>
+        <b>Wildcard</b> — nyoptimerad trupp för resten av fönstret.</div>
+      <div class="cnote">Wildcard och Free Hit räknas mot ditt lagvärde, inte mot 100m.</div>
+      <div class="cnote">Wildcard är det minst tillförlitliga måttet — det räknar inte in att du
+        ändå gör vanliga byten. Läs det som "hur långt från optimalt ligger mitt lag".</div>
     </div></div></div>`;
   box.innerHTML=html;
 }
@@ -1961,6 +2113,11 @@ function clearMyTeam(){
 }
 
 /* ============ Koppling ============ */
+document.getElementById('gwpills').addEventListener('click',e=>{
+  const t=e.target.closest('.pill'); if(!t||!MODEL)return;
+  LAG_GW=+t.dataset.gw; renderLag();
+  if(SEL){const p=MODEL.model.players.find(x=>x.id===SEL); if(p)renderDetail(p);}
+});
 document.getElementById('run').addEventListener('click',run);
 document.getElementById('team-go').addEventListener('click',fetchMyTeam);
 document.getElementById('team-paste').addEventListener('click',pasteMyTeam);
