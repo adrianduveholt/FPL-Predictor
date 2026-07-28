@@ -207,6 +207,10 @@
     background:var(--line);color:var(--dim);flex:none}
   .tag.in{color:var(--acc);border:1px solid #1d3a2b;background:#0d1a14}
   .tag.pen{background:#2b2438;color:var(--gk)}
+  .tag.avail{background:transparent;border:1px solid;font-weight:700}
+  .pcard .availb{position:absolute;top:-7px;right:8px;width:15px;height:15px;
+    border-radius:50%;color:#0b0f14;font-family:var(--mono);font-size:10px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;line-height:1}
   .lockbtn{cursor:pointer;font-size:14px;color:var(--dimmer);width:20px;text-align:center}
   .lockbtn:hover{color:var(--ink)} .lockbtn.on{color:var(--acc)}
   .tfoot{padding:11px 16px;font-size:11px;color:var(--dimmer)}
@@ -558,6 +562,7 @@
         <div class="gwpills" id="gwpills"></div>
       </div>
       <div class="kpis" id="kpis" style="margin-top:11px"></div>
+      <div class="warnbox hidden" id="squadwarn" style="margin-top:11px"></div>
       <div class="split" style="margin-top:13px">
         <div class="col">
           <div class="pitch" id="pitch"></div>
@@ -636,6 +641,7 @@
           <span class="pill" data-sort="fdr">FIXTUR</span>
         </div>
         <span class="pill" id="only-team">MITT LAG</span>
+        <span class="pill" id="only-flag">SKADELÄGE</span>
         <span class="pill" id="clr-lock">RENSA LÅS <span id="lockcount"></span></span>
       </div>
       <div class="tablebox" style="margin-top:12px">
@@ -835,6 +841,7 @@ function buildModel(){
       cop:(r.chance_of_playing_next_round===''||r.chance_of_playing_next_round==null)
           ?null:+r.chance_of_playing_next_round,
       penOrder:(r.penalties_order===''||r.penalties_order==null)?null:+r.penalties_order,
+      news:(r.news||'').toString().trim(),
       h});
   });
 
@@ -904,7 +911,7 @@ function buildModel(){
     players.push({id:r.id,name:r.name,team:r.team,team_short:r.team_short,pos:et,
       cost:r.cost,pp90:pp,minshare:Math.min(1,h.minutes/(38*90)),avail,
       penOrder:r.penOrder,bon90,dcRate,comp,minshare2:h.minutes/(38*90),
-      status:r.status,cop:r.cop,fixtures:teamFix[r.team]||[]});
+      status:r.status,cop:r.cop,news:r.news,fixtures:teamFix[r.team]||[]});
   });
   return {players,tShort};
 }
@@ -1475,7 +1482,7 @@ function analyseChips(){
 /* ============ Tillstånd ============ */
 let sortKey='projH', sortDir=-1, posFilter=0, onlyTeam=false, squadIds=new Set();
 const LOCKED=new Set();
-let TAB='lag', SEL=null, LAG_GW=0;   // 0 = snitt över horisonten
+let TAB='lag', SEL=null, LAG_GW=0, onlyFlag=false;   // 0 = snitt över horisonten
 const XI_MAXP={1:1,2:5,3:5,4:3}, XI_MINP={1:1,2:3,3:2,4:1};
 
 const PAGE={
@@ -1496,6 +1503,19 @@ function fxTicks(next5){
   return `<div class="fxbar">`+(next5||[]).map(f=>
     `<i class="${fdrCls(f.fdr)}" title="GW${f.gw}: ${f.opp} (${f.home?'H':'A'})"></i>`).join('')+`</div>`;
 }
+/* Tillgänglighet: FPL:s status + spelchans. Returnerar null när allt är normalt. */
+const STATUS_TXT={i:['SKADAD','#ff5d5d'],d:['TVEKSAM','#ffb454'],
+  s:['AVSTÄNGD','#ff5d5d'],u:['OTILLGÄNGLIG','#ff5d5d'],n:['EJ I TRUPP','#7d8b99']};
+function availInfo(p){
+  const st=p.status||'a';
+  const cop=(p.cop==null||isNaN(p.cop))?null:+p.cop;
+  if(st==='a'&&(cop==null||cop>=100))return null;
+  const base=STATUS_TXT[st]||['OSÄKER','#ffb454'];
+  return {code:st,label:base[0],color:base[1],cop:cop,
+    news:(p.news||'').trim(), pct:cop!=null?cop+'%':null,
+    out:cop===0||st==='s'||st==='u'||st==='n'};
+}
+
 /* Värde för en spelare: en specifik omgång, eller hela horisonten */
 function pval(p,gw){
   if(!gw)return p.projH;
@@ -1631,12 +1651,25 @@ function renderLag(){
       <div class="lrow">`+row.map(p=>pcard(p,p===cap,gw)).join('')+`</div></div>`;
   }).join('');
 
-  document.getElementById('bench').innerHTML=bench.map((p,i)=>
-    `<div class="bslot" data-id="${p.id}">
+  document.getElementById('bench').innerHTML=bench.map((p,i)=>{
+    const a=availInfo(p);
+    return `<div class="bslot" data-id="${p.id}">
       <span class="no">${i+1}</span>
-      <div style="flex:1;min-width:0"><div class="nm">${esc(p.name)}</div>
+      <div style="flex:1;min-width:0"><div class="nm">${esc(p.name)}${
+        a?` <span class="tag avail" style="color:${a.color};border-color:${a.color}55"
+          title="${a.label}${a.news?' — '+esc(a.news):''}">${a.pct||'!'}</span>`:''}</div>
         <div class="sub">${esc(p.team_short)} · ${POSMAP[p.pos]}</div></div>
-      <span class="xp">${pval(p,gw).toFixed(1)}</span></div>`).join('');
+      <span class="xp">${pval(p,gw).toFixed(1)}</span></div>`;}).join('');
+
+  const flagged=squad.map(p=>({p,a:availInfo(p)})).filter(x=>x.a);
+  const fb=document.getElementById('squadwarn');
+  if(flagged.length){
+    fb.classList.remove('hidden');
+    fb.innerHTML=`<b>${flagged.length} spelare i truppen har en notis från FPL.</b> `+
+      flagged.map(x=>`${esc(x.p.name)} (${x.a.label.toLowerCase()}${
+        x.a.pct?', '+x.a.pct:''})`).join(', ')+
+      `. Projektionen är redan nedskriven, men kontrollera dem innan deadline.`;
+  }else fb.classList.add('hidden');
 
   renderBreakdown(xi);
   renderScatter();
@@ -1645,9 +1678,13 @@ function renderLag(){
 function pcard(p,isCap,gw){
   const n1=gw?(p.fixtures||[]).filter(f=>f.gw===gw)[0]:(p.next5||[])[0];
   const opp=n1?(gw?(MODEL.model.tShort[n1.opp]||''):n1.opp):'';
+  const av=availInfo(p);
   return `<div class="pcard ${SEL===p.id?'sel':''}" data-id="${p.id}">
     ${isCap?'<span class="capb">C</span>':''}
-    ${p.penOrder===1?'<span class="penb">P</span>':''}
+    ${p.penOrder===1&&!av?'<span class="penb">P</span>':''}
+    ${av?`<span class="availb" style="background:${av.color}"
+      title="${av.label}${av.pct?' · '+av.pct+' spelchans':''}${
+      av.news?' — '+esc(av.news):''}">!</span>`:''}
     <div class="top"><span class="nm">${esc(p.name)}</span>
       <span class="ps p${p.pos}">${POSMAP[p.pos]}</span></div>
     <div class="meta">${esc(p.team_short)} · ${p.cost.toFixed(1)}</div>
@@ -1707,6 +1744,7 @@ function renderTable(){
   let rows=MODEL.model.players.slice();
   if(posFilter)rows=rows.filter(p=>p.pos===posFilter);
   if(onlyTeam)rows=rows.filter(p=>squadIds.has(p.id));
+  if(onlyFlag)rows=rows.filter(p=>availInfo(p));
   if(q)rows=rows.filter(p=>norm(p.name).includes(q)||norm(p.team_short).includes(q));
   rows.sort((a,b)=>{
     const x=a[sortKey],y=b[sortKey];
@@ -1719,6 +1757,9 @@ function renderTable(){
     return `<div class="trow body ${inT?'inteam':''}" data-id="${p.id}">
       <span class="rank">${i+1}</span>
       <span class="nm">${esc(p.name)}
+        ${(()=>{const a=availInfo(p);return a?`<span class="tag avail" style="color:${a.color};
+          border-color:${a.color}55" title="${a.label}${a.news?' — '+esc(a.news):''}">${
+          a.pct?a.pct:a.label.slice(0,4)}</span>`:'';})()}
         ${p.penOrder===1?'<span class="tag pen">P</span>':''}
         ${inT?'<span class="tag in">I LAGET</span>':''}</span>
       <span class="t">${esc(p.team_short)}</span>
@@ -1736,6 +1777,8 @@ function renderTable(){
     return `<div class="mcard" data-id="${p.id}">
       <span class="rank">${i+1}</span>
       <div class="mid"><div class="nm">${esc(p.name)}
+        ${(()=>{const a=availInfo(p);return a?`<span class="tag avail" style="color:${a.color};
+          border-color:${a.color}55">${a.pct?a.pct:'!'}</span>`:'';})()}
         ${p.penOrder===1?'<span class="tag pen">P</span>':''}
         ${inT?'<span class="tag in">LAG</span>':''}</div>
         <div class="sub">${esc(p.team_short)} · ${POSMAP[p.pos]} · ${p.cost.toFixed(1)}</div></div>
@@ -1757,13 +1800,23 @@ function renderDetail(p){
   const d=document.getElementById('detail');
   const comps=(p.comp||[]).slice().sort((a,b)=>Math.abs(b.v)-Math.abs(a.v));
   const max=Math.max(...comps.map(c=>Math.abs(c.v)),1);
-  const avail=p.cop!=null?p.cop+'%':(p.status==='a'?'tillgänglig':'osäker');
+  const av=availInfo(p);
   const stats=[
     ['POÄNG / 90',p.pp90.toFixed(2),Math.min(100,p.pp90/8*100),'#3ddc97'],
     ['POÄNG / MILJON',p.valH.toFixed(2),Math.min(100,p.valH/8*100),'#5fb2ff'],
     ['SPELTIDSANDEL',Math.round(p.minshare*100)+'%',p.minshare*100,'#ffb454'],
     ['FIXTUR 5 GW',p.fdr.toFixed(1),(5-p.fdr)/4*100,'#c8a2ff'],
   ];
+  const availBox=av?`<div class="card" style="border-color:${av.color}44;
+      background:${av.color}0f">
+      <div class="ch" style="color:${av.color}">${av.label}${
+        av.pct?' · '+av.pct+' SPELCHANS':''}</div>
+      ${av.news?`<div class="cnote" style="color:var(--ink)">${esc(av.news)}</div>`:''}
+      <div class="cnote">Projektionen är nedskriven med ${
+        av.cop!=null?(100-av.cop):50}% på grund av detta.</div></div>`
+    :`<div class="card" style="border-color:#1d3a2b">
+      <div class="ch" style="color:var(--acc)">TILLGÄNGLIG</div>
+      <div class="cnote">Ingen skade- eller avstängningsnotis från FPL.</div></div>`;
   d.innerHTML=`<div class="dsheetgrip"></div>
     <div class="dhead">
       <div><div class="nm">${esc(p.name)}</div>
@@ -1774,9 +1827,9 @@ function renderDetail(p){
     <div class="card">
       <div class="ch">PROJEKTION · GW1–${document.getElementById('c-h').value}</div>
       <div class="dbig">${p.projH.toFixed(1)}</div>
-      <div class="cnote" style="margin-top:2px">${p.pp90.toFixed(2)} p per 90 min ·
-        tillgänglighet ${avail}</div>
+      <div class="cnote" style="margin-top:2px">${p.pp90.toFixed(2)} p per 90 min</div>
     </div>
+    ${availBox}
     <div class="card">
       <div class="ch">NÄSTA 5 MOTSTÅND</div>
       <div style="margin-top:9px">${fxCells(p.next5,true)}</div>
@@ -2153,6 +2206,9 @@ document.querySelectorAll('#sortpills .pill').forEach(p=>p.addEventListener('cli
 }));
 document.getElementById('only-team').addEventListener('click',function(){
   onlyTeam=!onlyTeam; this.classList.toggle('on',onlyTeam); renderTable();
+});
+document.getElementById('only-flag').addEventListener('click',function(){
+  onlyFlag=!onlyFlag; this.classList.toggle('on',onlyFlag); renderTable();
 });
 document.getElementById('clr-lock').addEventListener('click',()=>{
   if(!LOCKED.size)return; LOCKED.clear(); reoptimize();

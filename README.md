@@ -33,8 +33,58 @@ Spelare kopplas mellan säsongerna via `player_code`, som är stabil över tid. 
 - **Hållna nollor och insläppta mål** för målvakter och backar
 - **Regularisering** som krymper små stickprov mot positionssnittet, så en spelare med 200 tursamma minuter inte rankas över en pålitlig helårsspelare
 - **Fixture-viktning** via ClubElo — förväntad poängandel per match, med hemmaplansfördel inbakad
-- **Tillgänglighet** utifrån skadestatus och spelchans
+- **Tillgänglighet** utifrån FPL:s skadestatus, avstängningar och spelchans
 - **Lagoptimering** inom FPL:s regler: 100.0m, 2 GK / 5 DEF / 5 MID / 3 FWD, max 3 per klubb
+
+### Optimeringen maximerar startelvan, inte truppen
+
+Det här är viktigare än det låter. Bänken ger inga poäng (om inte Bench Boost spelas), så en
+modell som maximerar summan av alla 15 spelare lägger pengar på bänkspelare i onödan.
+Optimeraren väljer därför trupp **och** startelva samtidigt, och testar alla lagliga
+formationer (3–5 backar, 2–5 mittfältare, 1–3 anfallare).
+
+Mätt skillnad över GW1–10:
+
+| Optimeringsmål | Elvans poäng | Formation | Bänkens kostnad |
+|---|---|---|---|
+| Alla 15 spelare | 522,3 | 4-3-3 | 26,5m |
+| Startelvan | **570,2** | **5-4-1** | 19,5m |
+
+Skillnaden är 47,9 poäng, nästan 9%. Modellen värderar backar högt tack vare DefCon och
+hållna nollor, så den landar ofta i fem backar och en anfallare med en billig bänk.
+
+En följdeffekt: med en billig bänk blir **Bench Boost mindre värt** — från runt 15 poäng till
+runt 8. Det är korrekt, inte ett fel.
+
+### Skador och tillgänglighet
+
+Modellen skriver ner projektionen efter FPL:s egna fält: en spelare med 75% spelchans får 75%
+av sina poäng, och den som är helt ute får noll och väljs därför aldrig in. Det är också
+synligt i gränssnittet — en färgad prick på spelarbrickan, en procenttagg i listan, och en
+ruta i spelarpanelen med skadenotisen i klartext.
+
+Hamnar en flaggad spelare i truppen (t.ex. om du låser in honom) visas en varning överst i
+lag-vyn med namn och orsak.
+
+Datakällan uppdateras två gånger dagligen, så skadeläget är färskt — men **kontrollera alltid
+mot FPL innan deadline**, eftersom besked kan komma senare än senaste uppdateringen.
+
+### Uppställning per omgång
+
+Lag-vyn har en omgångsväljare. **SNITT** visar den elva som är bäst över hela horisonten;
+väljer du en enskild omgång räknas elvan, formationen och kaptenen om för just den. Pillren
+markeras när någon i truppen har dubbelomgång (grön) eller saknar match (röd).
+
+**Just nu blir formationen densamma i alla omgångar.** Det beror inte på att funktionen är
+trasig utan på att modellens variation mellan omgångar är liten — bara Elo-multiplikatorn
+skiljer, vilket vid standardvikten ger ±12%. Det räcker inte för att flytta en spelare ur
+elvan. Mätt vinst av att rotera elvan optimalt varje omgång: **0,0 poäng**. Först vid en
+fixture-vikt runt 60% börjar det ge utslag.
+
+Kaptenen däremot **byts** mellan omgångar, och när dubbel- och blankomgångar dyker upp i
+schemat börjar formationen röra sig. Verifierat med en simulerad blankomgång: utan match för
+två klubbar gick formationen från 5-4-1 till 4-3-3 och de fyra berörda spelarna bänkades
+automatiskt.
 
 Bonus och DefCon kan slås av och på i appen om du vill se hur mycket de påverkar.
 
@@ -44,10 +94,10 @@ Fyra åtskilda vyer, så det alltid är tydligt vad du planerar:
 
 | Vy | Innehåll |
 |----|----------|
-| **Optimerat lag** | Startelva per lagdel, bänk, poänguppdelning, pris-mot-poäng, fixtur-värmekarta |
+| **Optimerat lag** | Startelva per omgång med formation, bänk, poänguppdelning, pris-mot-poäng, fixtur-värmekarta |
 | **Alla spelare** | Sökbar och sorterbar lista (poäng / värde / fixtur), lås spelare |
 | **Bytesplan** | UT→IN-kort med motiv, plus plan per omgång |
-| **Chip-plan** | Bästa omgång per chip och halva |
+| **Chip-plan** | Tre rangordnade alternativ per chip, per halva, med tydligt halvtidsbryt |
 
 På dator ligger navigeringen i en vänstermeny och spelardetaljer i en högerpanel. På mobil blir
 navigeringen en tab-bar i botten och detaljerna ett bottenblad. Samma fil, ingen separat mobilversion.
@@ -69,6 +119,7 @@ modellens faktiska delar, inte en skattning av spridning.
 - **Kommande 5 matcher** — varje spelare visar nästa motståndare med hemma/borta, följt av små färgade pluppar för de återstående fyra. Mörkgrön = mycket lätt, grön = lätt, grå = lika, röd = svår, mörkröd = mycket svår. Håll pekaren över en plupp för motståndare och omgång.
 - **Lås spelare** (○ / ● i tabellen) — tvinga in en spelare, t.ex. Haaland, så byggs laget om runt honom. Kaptenen sätts automatiskt till lagets högst projicerade utespelare.
 - **Straffläggarflagga** — spelare markerade **P** är sitt lags utsedda straffläggare den här säsongen.
+- **Skadeläge** — skadade, tveksamma och avstängda spelare flaggas på brickor, i bänken och i listan. Filtret **SKADELÄGE** visar bara de berörda. Klicka en spelare för FPL:s notis i klartext, t.ex. "Ankle injury – 75% chance of playing".
 - **Exportera** — ladda ner laget eller alla projektioner som CSV.
 - **Jämför mot mitt lag** — klistra in dina spelares namn och få en rättvis jämförelse (poäng per spelare) plus konkreta uppgraderingsförslag i samma prisklass.
 - **Tre tydligt åtskilda flikar** — *Lag & spelare*, *Bytesplan* och *Chip-plan*, så det alltid är klart vad du planerar.
