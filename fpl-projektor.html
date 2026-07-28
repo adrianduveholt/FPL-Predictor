@@ -225,6 +225,31 @@
   .cmp-row .in{font-weight:600}
   .cmp-row .gain{margin-left:auto;font-family:var(--mono);color:var(--good);font-size:13px}
   #cmp-diff.pos{color:var(--good)} #cmp-diff.neg{color:var(--bad)}
+  /* bytesplan */
+  .planbar{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 18px}
+  #p-squad{width:100%;max-width:420px;min-height:90px;background:var(--panel2);
+    border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:11px;
+    font-family:var(--mono);font-size:13px;resize:vertical}
+  .chain{display:flex;gap:10px;overflow-x:auto;padding:16px 2px 6px;scrollbar-width:thin}
+  .gwcard{min-width:172px;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;padding:13px 14px;position:relative;flex-shrink:0}
+  .gwcard .g{font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.06em}
+  .gwcard .pts{font-family:var(--mono);font-size:23px;font-weight:700;margin-top:5px}
+  .gwcard .pts span{font-size:12px;color:var(--dim);font-weight:400}
+  .gwcard .cap{font-size:11px;color:var(--dim);margin-top:5px}
+  .gwcard .cap b{color:var(--acc);font-weight:600}
+  .gwcard .mv{margin-top:10px;padding-top:9px;border-top:1px solid var(--line);font-size:11px}
+  .gwcard .mv .o{color:var(--dim)} .gwcard .mv .i{color:var(--ink);font-weight:600}
+  .gwcard .mv .row2{margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .gwcard .hit{position:absolute;top:11px;right:12px;font-family:var(--mono);font-size:10px;
+    background:#3a1818;color:#ff8080;padding:2px 6px;border-radius:4px}
+  .gwcard .keep{margin-top:10px;padding-top:9px;border-top:1px solid var(--line);
+    font-size:11px;color:var(--dimmer)}
+  .plansum{display:flex;gap:22px;flex-wrap:wrap;font-family:var(--mono);font-size:13px;
+    margin-top:6px;padding:12px 16px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:9px}
+  .plansum b{color:var(--acc)}
 </style>
 </head>
 <body>
@@ -336,6 +361,43 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <div id="plan-section">
+      <h2>Bytesplan</h2>
+      <div class="planbar">
+        <div class="ctrl">
+          <label>Utgå från</label>
+          <div class="row">
+            <span class="pill on" data-src="opt">Optimalt lag</span>
+            <span class="pill" data-src="own">Mitt lag</span>
+          </div>
+        </div>
+        <div class="ctrl">
+          <label>Omgångar framåt</label>
+          <div class="row"><select id="p-h">
+            <option>3</option><option selected>5</option><option>8</option>
+          </select></div>
+        </div>
+        <div class="ctrl">
+          <label>Fria byten nu</label>
+          <div class="row"><select id="p-ft">
+            <option>1</option><option>2</option><option>3</option>
+            <option>4</option><option>5</option>
+          </select></div>
+        </div>
+        <div class="ctrl">
+          <label>Bank (m)</label>
+          <div class="row"><input type="number" id="p-bank" value="0" step="0.1"
+            min="0" max="20" style="width:70px"></div>
+        </div>
+        <button class="run" id="p-run" style="align-self:flex-end">Planera</button>
+      </div>
+      <div id="p-own" class="hidden" style="margin-top:12px">
+        <p class="hint" style="margin-bottom:8px">Klistra in dina 15 spelare (ett per rad eller kommaseparerat).</p>
+        <textarea id="p-squad" placeholder="Haaland&#10;Saka&#10;…"></textarea>
+      </div>
+      <div id="p-out" class="hidden"></div>
     </div>
 
     <h2>Alla spelare — rankade</h2>
@@ -886,7 +948,221 @@ function runCompare(){
   });
 }
 
+/* ============ Bytesplan (beam search) ============ */
+let PLAN_SRC='opt';
+const XI_MIN={1:1,2:3,3:2,4:1}, XI_MAX={1:1,2:5,3:5,4:3};
+
+/* Poäng per spelare och gameweek */
+function gwPointsMap(players,H,fw){
+  const m=new Map();
+  players.forEach(p=>{
+    const o={};
+    p.fixtures.forEach(f=>{
+      if(f.gw>H)return;
+      o[f.gw]=(o[f.gw]||0)+p.pp90*p.minshare*(1+(f.E-0.5)*4*fw)*p.avail;
+    });
+    m.set(p.id,o);
+  });
+  return m;
+}
+/* Bästa startelva ur en trupp för en omgång. Returnerar {pts, cap} */
+function bestXI(squad,gw,gpm){
+  const val=p=>(gpm.get(p.id)||{})[gw]||0;
+  const gk=squad.filter(p=>p.pos===1).sort((a,b)=>val(b)-val(a));
+  const out=squad.filter(p=>p.pos!==1).sort((a,b)=>val(b)-val(a));
+  if(!gk.length)return {pts:0,cap:null,xi:[]};
+  const xi=[gk[0]]; const cnt={1:1,2:0,3:0,4:0};
+  // fyll minimikraven först
+  [2,3,4].forEach(pos=>{
+    out.filter(p=>p.pos===pos).slice(0,XI_MIN[pos]).forEach(p=>{xi.push(p);cnt[pos]++;});
+  });
+  // fyll upp till 11 med bästa återstående inom positionstaken
+  for(const p of out){
+    if(xi.length>=11)break;
+    if(xi.includes(p))continue;
+    if(cnt[p.pos]>=XI_MAX[p.pos])continue;
+    xi.push(p);cnt[p.pos]++;
+  }
+  let pts=0,cap=null,best=-1;
+  xi.forEach(p=>{const v=val(p);pts+=v;if(v>best){best=v;cap=p;}});
+  return {pts:pts+best,cap,xi};   // kapten dubblas
+}
+
+function buildPlan(){
+  const players=MODEL.model.players;
+  const H=+document.getElementById('p-h').value;
+  const fw=(+document.getElementById('c-f').value)/100;
+  const ft0=+document.getElementById('p-ft').value;
+  const bank=+document.getElementById('p-bank').value||0;
+  const gpm=gwPointsMap(players,H,fw);
+  const byId=new Map(players.map(p=>[p.id,p]));
+
+  // Startlag
+  let start;
+  if(PLAN_SRC==='own'){
+    const names=document.getElementById('p-squad').value.split(/[\n,]/)
+      .map(s=>norm(s)).filter(Boolean);
+    const picked=[],missing=[];
+    names.forEach(q=>{
+      let hit=players.find(p=>norm(p.name)===q);
+      if(!hit){
+        const pre=players.filter(p=>norm(p.name).startsWith(q)||
+          norm(p.name).replace(/\./g,' ').split(' ').includes(q));
+        if(pre.length===1)hit=pre[0];
+      }
+      if(hit&&!picked.includes(hit))picked.push(hit); else if(!hit)missing.push(q);
+    });
+    if(picked.length<11)
+      return {error:`Bara ${picked.length} av ${names.length} namn kunde matchas`+
+        (missing.length?` (${missing.slice(0,5).join(', ')})`:'')+
+        '. Kontrollera stavningen.'};
+    start={squad:picked,missing};
+  }else{
+    start={squad:MODEL.squad.slice(),missing:[]};
+  }
+
+  const cost=s=>s.reduce((a,p)=>a+p.cost,0);
+  const budget=cost(start.squad)+bank;
+
+  // Kandidater att köpa in: bästa per position
+  const pool={1:[],2:[],3:[],4:[]};
+  players.forEach(p=>pool[p.pos].push(p));
+  Object.values(pool).forEach(a=>a.sort((x,y)=>y.projH-x.projH));
+
+  // Framtida värde från omgång g och framåt (för att bedöma ett byte)
+  const fwd=(p,g)=>{let s=0;const o=gpm.get(p.id)||{};
+    for(let k=g;k<=H;k++)s+=o[k]||0;return s;};
+
+  const BEAM=6, CAND_OUT=6, CAND_IN=6;
+  let states=[{squad:start.squad,ft:ft0,pts:0,hits:0,log:[]}];
+
+  for(let g=1;g<=H;g++){
+    const next=[];
+    states.forEach(st=>{
+      const ids=new Set(st.squad.map(p=>p.id));
+      const teamCnt={};st.squad.forEach(p=>teamCnt[p.team_short]=(teamCnt[p.team_short]||0)+1);
+      // alternativ: 0 byten, 1 byte, eller ett par (nedgradering som finansierar uppgradering)
+      const opts=[{ins:[],outs:[]}];
+      if(g>1||PLAN_SRC==='own'){
+        const slack=budget-cost(st.squad);
+        const moves=[];               // alla tänkbara enskilda byten
+        st.squad.forEach(o=>{
+          let tried=0;
+          for(const c of pool[o.pos]){
+            if(tried>=10)break;
+            if(ids.has(c.id))continue;
+            const tc=(teamCnt[c.team_short]||0)-(c.team_short===o.team_short?1:0);
+            if(tc>=3)continue;
+            moves.push({o,c,dv:fwd(c,g)-fwd(o,g),dc:c.cost-o.cost});
+            tried++;
+          }
+        });
+        // enskilda byten som både förbättrar och får plats i budgeten
+        moves.filter(m=>m.dv>0&&m.dc<=slack+1e-9)
+             .sort((a,b)=>b.dv-a.dv).slice(0,CAND_OUT*2)
+             .forEach(m=>opts.push({ins:[m.c],outs:[m.o]}));
+        if(st.ft>=2){
+          // uppgraderingar som är för dyra på egen hand
+          const ups=moves.filter(m=>m.dv>0&&m.dc>slack)
+            .sort((a,b)=>b.dv-a.dv).slice(0,10);
+          // finansiärer: frigör pengar till minsta möjliga värdeförlust
+          const fund=moves.filter(m=>m.dc<0)
+            .sort((a,b)=>(b.dv/-b.dc)-(a.dv/-a.dc)).slice(0,12);
+          ups.forEach(u=>fund.forEach(f=>{
+            if(u.o.id===f.o.id||u.c.id===f.c.id)return;
+            if(u.dc+f.dc>slack+1e-9)return;
+            if(u.dv+f.dv<=0)return;
+            const sq2=st.squad.filter(p=>p.id!==u.o.id&&p.id!==f.o.id).concat([u.c,f.c]);
+            if(sq2.length!==st.squad.length)return;
+            const tc={};sq2.forEach(p=>tc[p.team_short]=(tc[p.team_short]||0)+1);
+            if(Object.values(tc).some(v=>v>3))return;
+            opts.push({ins:[u.c,f.c],outs:[u.o,f.o]});
+          }));
+        }
+      }
+      opts.forEach(op=>{
+        let sq=st.squad;
+        if(op.outs.length){
+          const rm=new Set(op.outs.map(p=>p.id));
+          sq=st.squad.filter(p=>!rm.has(p.id)).concat(op.ins);
+        }
+        const T=op.ins.length;
+        const used=Math.min(T,st.ft);
+        const hits=T-used;
+        const xi=bestXI(sq,g,gpm);
+        const gain=xi.pts-hits*4;
+        next.push({squad:sq, ft:Math.min(5,st.ft-used+1),
+          pts:st.pts+gain, hits:st.hits+hits,
+          log:st.log.concat([{gw:g,pts:xi.pts,cap:xi.cap,hits,
+            ft:Math.min(5,st.ft-used+1),ins:op.ins,outs:op.outs}])});
+      });
+    });
+    // behåll de bästa, men undvik dubbletter av samma trupp
+    next.sort((a,b)=>b.pts-a.pts);
+    const seen=new Set(); states=[];
+    for(const s of next){
+      const key=s.squad.map(p=>p.id).sort().join(',')+'|'+s.ft;
+      if(seen.has(key))continue;
+      seen.add(key);states.push(s);
+      if(states.length>=BEAM)break;
+    }
+  }
+  const best=states[0];
+  return {plan:best.log,total:best.pts,hits:best.hits,missing:start.missing};
+}
+
+function renderPlan(){
+  const box=document.getElementById('p-out');
+  box.classList.remove('hidden');
+  const res=buildPlan();
+  if(res.error){box.innerHTML=`<p class="err" style="margin-top:12px">${res.error}</p>`;return;}
+  const H=res.plan.length;
+  let html=`<div class="plansum">
+      <span>Total projicerad: <b>${res.total.toFixed(1)} p</b></span>
+      <span>över ${H} omgångar</span>
+      <span>poängavdrag: ${res.hits?'<b style="color:var(--bad)">-'+(res.hits*4)+'</b>':'0'}</span>
+      <span>byten: ${res.plan.reduce((a,l)=>a+l.ins.length,0)}</span>
+    </div><div class="chain">`;
+  res.plan.forEach(l=>{
+    const moves=l.ins.length
+      ? l.ins.map((c,i)=>`<div class="row2"><span class="o">${l.outs[i].name}</span>
+           → <span class="i">${c.name}</span></div>`).join('')
+      : '';
+    html+=`<div class="gwcard">
+      ${l.hits?`<span class="hit">-${l.hits*4}</span>`:''}
+      <div class="g">GW${l.gw}</div>
+      <div class="pts">${l.pts.toFixed(1)}<span> p</span></div>
+      <div class="cap">C: <b>${l.cap?l.cap.name:'–'}</b> · FT ${l.ft}</div>
+      ${moves?`<div class="mv">${moves}</div>`
+             :`<div class="keep">inga byten — sparar FT</div>`}
+    </div>`;
+  });
+  html+='</div>';
+  const nTrans=res.plan.reduce((a,l)=>a+l.ins.length,0);
+  if(!nTrans){
+    html+=`<p class="hint" style="margin-top:10px">Planen hittar inga byten som lönar sig.
+      Det är ett rimligt svar: om truppen redan använder hela budgeten finns ingen spelare
+      som är både bättre och billigare, och då är det bättre att spara fria byten till
+      skador och formförändringar.</p>`;
+  }
+  if(res.missing&&res.missing.length)
+    html+=`<p class="hint">Ej matchade namn: ${res.missing.join(', ')}</p>`;
+  html+=`<p class="hint" style="margin-top:10px">Heuristisk plan (beam search, max ett byte
+    per omgång). Inga prisförändringar, inga chips. Python-scriptet
+    <code>fpl_plan.py</code> löser samma problem exakt med MILP och tillåter flera
+    byten per omgång.</p>`;
+  box.innerHTML=html;
+}
+
 /* ============ Event wiring ============ */
+document.querySelectorAll('.pill[data-src]').forEach(pl=>{
+  pl.addEventListener('click',()=>{
+    document.querySelectorAll('.pill[data-src]').forEach(x=>x.classList.remove('on'));
+    pl.classList.add('on'); PLAN_SRC=pl.dataset.src;
+    document.getElementById('p-own').classList.toggle('hidden',PLAN_SRC!=='own');
+  });
+});
+document.getElementById('p-run').addEventListener('click',()=>{if(MODEL)renderPlan();});
 document.getElementById('run').addEventListener('click',run);
 document.getElementById('exp-squad').addEventListener('click',exportSquad);
 document.getElementById('exp-all').addEventListener('click',exportAll);

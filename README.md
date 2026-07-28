@@ -46,6 +46,32 @@ Bonus och DefCon kan slås av och på i appen om du vill se hur mycket de påver
 - **Straffläggarflagga** — spelare markerade **P** är sitt lags utsedda straffläggare den här säsongen.
 - **Exportera** — ladda ner laget eller alla projektioner som CSV.
 - **Jämför mot mitt lag** — klistra in dina spelares namn och få en rättvis jämförelse (poäng per spelare) plus konkreta uppgraderingsförslag i samma prisklass.
+- **Bytesplan** — planerar byten över 3, 5 eller 8 omgångar framåt: vilka byten, vilken omgång, när det lönar sig att spara fria byten och när ett −4 är värt det. Utgår från antingen det optimala laget eller ditt eget.
+
+## Bytesplanen
+
+Bytesplanering är ett flerperiodsproblem: ett byte i GW2 påverkar vad som är möjligt i GW5, och att spara ett fritt byte kan vara mer värt än att använda det direkt. Båda versionerna modellerar det, men olika noggrant.
+
+**I appen** körs en beam search som testar noll, ett eller två byten per omgång — inklusive det klassiska draget att nedgradera en spelare för att finansiera en uppgradering av en annan. Snabbt och visuellt, men inte garanterat optimalt.
+
+**I Python** (`fpl_plan.py`) löses hela sekvensen exakt med MILP. Den bestämmer trupp, startelva och kapten för varje omgång samtidigt, med bivillkor för fria byten (max 5 sparade), −4-avdrag, budget och max tre per klubb.
+
+```bash
+python3 python/fpl_plan.py                             # från optimalt lag
+python3 python/fpl_plan.py --squad "Haaland,Saka,..."  # från ditt lag
+python3 python/fpl_plan.py --horizon 5 --ft 2 --bank 1.5
+```
+
+Körtid är några sekunder. `--candidates` styr poolens storlek — högre ger bättre lösning men tar längre tid (110 är standard, 220 tar ~7 sekunder).
+
+### Vad planen inte tar hänsyn till
+
+- **Prisförändringar och försäljningspris.** Inköpspris antas vara dagens pris. Det gör att modellen ibland säljer en spelare och köper tillbaka honom några omgångar senare — i verkligheten kostar det pengar.
+- **Chips.** Wildcard, Free Hit, Bench Boost och Triple Captain modelleras inte.
+- **Osäkerhet.** Solio visar en fördelning (t.ex. 306,5 ±29,4) från en stokastisk simulering. Den här modellen ger punktskattningar, ingen spridning.
+- **Bänkpoäng.** Bänken antas ge noll.
+
+En observation värd att ta med: utgår du från ett lag som redan använder hela budgeten finns det ofta *ingen* spelare som är både bättre och billigare, och då hittar planen få eller inga byten. Det är ett riktigt svar, inte ett fel — spara de fria bytena till skador och formförändringar istället.
 
 ## Om svårighetsgraden
 
@@ -115,6 +141,7 @@ Webb-appen och Python-scriptet ger identiska projektioner; skillnaden ligger bar
 |-----|-------------|
 | `fpl-projektor.html` | Hela webb-appen — en enda fil, inga beroenden |
 | `python/fpl_optimize.py` | Exakt LP-optimering, hämtar data själv |
+| `python/fpl_plan.py` | Bytesplanering över flera omgångar (MILP) |
 | `python/evaluate.py` | Utvärdering mot verkligt utfall |
 | `python/ANVANDNING_utvardering.md` | Så använder du utvärderingsloopen |
 
